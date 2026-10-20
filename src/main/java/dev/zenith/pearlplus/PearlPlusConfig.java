@@ -12,7 +12,6 @@ public class PearlPlusConfig {
         public volatile boolean enabled = true;
         public volatile boolean allowNoiseAfterPearl = false;
         public volatile boolean publicChatEnabled = false;
-        public volatile String publicChatAffix = "!";
         public volatile int publicChatDelaySeconds = 7;
         public volatile String publicChatSuccessMessage = "Pearl interaction completed for {player}";
         public Map<UUID, List<String>> allowed = new LinkedHashMap<>();

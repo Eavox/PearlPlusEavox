@@ -1,4 +1,4 @@
-# PearlPlus 1.1.3
+# PearlPlus 1.1.4
 
 Allow selected players to activate registered ZenithProxy pearl loaders through whispers or public chat, without granting account-owner permissions.
 
@@ -12,12 +12,12 @@ On Linux, run these shell commands **from your ZenithProxy folder**:
 
 ```sh
 mkdir -p plugins
-curl -fL --retry 3 -o plugins/PearlPlus-1.1.3.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.3/PearlPlus-1.1.3.jar
+curl -fL --retry 3 -o plugins/PearlPlus-1.1.4.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.4/PearlPlus-1.1.4.jar
 ```
 
 Use Zenith's **Java release channel**. Run `plugins on` in the **Zenith console**, then restart Zenith and run `plugins list` to confirm PearlPlus loaded. Remove older PearlPlus JARs before restarting, but keep the config.
 
-Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.3.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
+Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.4.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
 
 Configuration remains in `plugins/config/pearl-plus.json`. Existing `allowed` UUID lists and `alias=target` entries are preserved. The new `playerNames` map caches display names; older entries show UUIDs until a name is learned from an authorized request or an allow command. Listing never requires a network lookup.
 
@@ -55,11 +55,11 @@ Without a keyword, the first valid assigned entry is used. An unassigned keyword
 Public chat mode is enabled with `pp publicchat on`:
 
 ```text
-!load Spawn randomText
-! load Spawn randomText
+load Spawn
+load Spawn randomText
 ```
 
-**Public mode disables whisper loading.** Public commands always allow trailing anti-spam text. The prefix defaults to `!` and is configurable through `publicChatAffix` in the JSON config. An empty prefix disables public-command parsing.
+**Public mode disables whisper loading.** Public commands always allow trailing anti-spam text. No prefix is required: type `load Spawn` directly. The old `publicChatAffix` setting is ignored, so existing installations need no config edit. Prefixed commands such as `!load Spawn` are no longer accepted.
 
 ## Completion and request limits
 

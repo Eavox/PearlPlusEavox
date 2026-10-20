@@ -87,11 +87,7 @@ public class AutoLoadModule extends Module {
     }
 
     private void onPublicChat(PublicChatEvent event) {
-        String affix = PLUGIN_CONFIG.autoLoad.publicChatAffix;
-        if (affix == null || affix.isBlank() || event.message() == null) return;
-        String message = event.message().trim();
-        if (!message.regionMatches(true, 0, affix, 0, affix.length())) return;
-        processLoadCommand(event.sender(), message.substring(affix.length()).trim(), true);
+        processLoadCommand(event.sender(), event.message(), true);
     }
 
     private void processLoadCommand(PlayerListEntry sender, String message, boolean publicChat) {
