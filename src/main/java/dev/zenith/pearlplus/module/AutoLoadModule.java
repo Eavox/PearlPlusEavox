@@ -30,7 +30,6 @@ import java.util.function.BooleanSupplier;
 import static com.github.rfresh2.EventConsumer.of;
 import static com.zenith.Globals.COMMAND;
 import static com.zenith.Globals.CONFIG;
-import static com.zenith.Globals.PLAYER_LISTS;
 import static dev.zenith.pearlplus.PearlPlusPlugin.PLUGIN_CONFIG;
 
 public class AutoLoadModule extends Module {
@@ -120,7 +119,7 @@ public class AutoLoadModule extends Module {
             if (!proxy.isConnected() || proxy.isInQueue()) return;
             var automatic = PLUGIN_CONFIG.autoDetect.get(pearl.target());
             if (!AutoPearlAccess.mayLoad(automatic, sender.getProfileId(), AutoDetectModule.currentScope(),
-                PLAYER_LISTS.getWhitelist().contains(sender.getProfileId()))) return;
+                config.canAutoRegister(sender.getProfileId(), pearl.alias()))) return;
             if (automatic != null) {
                 // A changed/missing trapdoor or edited built-in loader must not redirect an auto registration.
                 if (!World.isChunkLoadedBlockPos(automatic.x(), automatic.z())

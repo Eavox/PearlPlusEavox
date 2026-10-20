@@ -50,7 +50,7 @@ public class AutoLoadCommand extends Command {
             }))
             .then(literal("allow").then(argument("playerName", wordWithChars())
                 .then(argument("pearlName", wordWithChars())
-                    .executes(c -> { return allowPlayer(c, getString(c, "pearlName"), getString(c, "pearlName")); })
+                    .executes(c -> { return allowPlayer(c, getString(c, "pearlName"), null); })
                     .then(argument("pearlId", wordWithChars())
                         .executes(c -> { return allowPlayer(c, getString(c, "pearlName"), getString(c, "pearlId")); })))))
             .then(literal("deny").then(argument("playerName", wordWithChars())
@@ -86,7 +86,7 @@ public class AutoLoadCommand extends Command {
             .then(literal("base").executes(c -> {
                 String base = AutoPearlNaming.baseAlias(PLUGIN_CONFIG.autoDetect.baseName);
                 c.getSource().getEmbed().title(base == null ? "Base not set" : "Base: " + base)
-                    .description("Set this bot's base with pp base Crewbase. Whitelisted players then use load crewbase.");
+                    .description("Set this bot's base with pp base Crewbase. Players in pp allow then use load crewbase.");
                 return OK;
             }).then(argument("name", wordWithChars()).executes(c -> {
                 String base = AutoPearlNaming.baseAlias(getString(c, "name"));
@@ -98,7 +98,7 @@ public class AutoLoadCommand extends Command {
                 MODULE.get(AutoLoadModule.class).cancelPendingRequests();
                 MODULE.get(AutoDetectModule.class).setBase(base);
                 c.getSource().getEmbed().title("Pearl+ base set to " + base)
-                    .description("Whitelisted players can throw a pearl nearby. Once detected, use load " + base
+                    .description("Players in pp allow can throw a pearl nearby. Once detected, use load " + base
                         + " in public chat or whispers.");
                 return OK;
             })))
@@ -128,12 +128,12 @@ public class AutoLoadCommand extends Command {
     }
 
     private int allowPlayer(com.mojang.brigadier.context.CommandContext<CommandContext> ctx, String alias, String target) {
-        if (!PearlEntry.validToken(alias) || !PearlEntry.validToken(target)) {
+        if (!PearlEntry.validToken(alias) || (target != null && !PearlEntry.validToken(target))) {
             ctx.getSource().getEmbed().title("Invalid keyword or pearl ID")
                 .description("Use 1-128 characters, without whitespace, control characters, or '='.");
             return ERROR;
         }
-        if (CONFIG.client.extra.pearlLoader.pearls.stream().noneMatch(p -> p.id().equals(target))) {
+        if (target != null && CONFIG.client.extra.pearlLoader.pearls.stream().noneMatch(p -> p.id().equals(target))) {
             ctx.getSource().getEmbed().title("Pearl ID not found: " + target)
                 .description("Register it with pearlLoader add first. IDs are case-sensitive.");
             return ERROR;
@@ -145,6 +145,13 @@ public class AutoLoadCommand extends Command {
             return ERROR;
         }
         ProfileData player = profile.get();
+        if (target == null) {
+            String base = AutoPearlNaming.baseAlias(alias);
+            PLUGIN_CONFIG.autoLoad.allowBase(player.uuid(), player.name(), base);
+            ctx.getSource().getEmbed().title("Allowed " + player.name() + " at " + base)
+                .description("PearlPlus access only. Automatic setup will assign their detected chamber; Zenith login access is unchanged.");
+            return OK;
+        }
         var pearl = new PearlEntry(alias, target);
         PLUGIN_CONFIG.autoLoad.allow(player.uuid(), player.name(), pearl);
         ctx.getSource().getEmbed().title("Allowed " + player.name() + " -> " + pearl.serialize());
@@ -152,7 +159,10 @@ public class AutoLoadCommand extends Command {
     }
 
     private int list(CommandContext ctx, int page) {
-        var entries = PLUGIN_CONFIG.autoLoad.snapshot().entrySet().stream().toList();
+        var snapshot = PLUGIN_CONFIG.autoLoad.snapshot();
+        var access = PLUGIN_CONFIG.autoLoad.accessSnapshot();
+        access.keySet().forEach(id -> snapshot.putIfAbsent(id, java.util.List.of()));
+        var entries = snapshot.entrySet().stream().toList();
         int pages = Math.max(1, (entries.size() + 4) / 5);
         if (page > pages) {
             ctx.getEmbed().title("Page must be between 1 and " + pages);
@@ -163,6 +173,11 @@ public class AutoLoadCommand extends Command {
         for (var entry : entries.subList((page - 1) * 5, Math.min(page * 5, entries.size()))) {
             String pearls = entry.getValue().stream().flatMap(v -> PearlEntry.parse(v).stream())
                 .map(PearlEntry::serialize).collect(Collectors.joining(", "));
+            String pending = access.getOrDefault(entry.getKey(), java.util.List.of()).stream()
+                .filter(base -> entry.getValue().stream().flatMap(v -> PearlEntry.parse(v).stream())
+                    .noneMatch(p -> p.alias().equalsIgnoreCase(base)))
+                .map(base -> base + " (waiting for pearl)").collect(Collectors.joining(", "));
+            if (!pending.isEmpty()) pearls = pearls.isEmpty() ? pending : pearls + ", " + pending;
             String value = entry.getKey() + "\n" + (pearls.isEmpty() ? "No valid entries" : pearls);
             if (value.length() > 1000) value = value.substring(0, 997) + "...";
             embed.addField(PLUGIN_CONFIG.autoLoad.displayName(entry.getKey()), value);

@@ -83,7 +83,7 @@ public class AutoDetectModule extends Module {
                 }
             }
         }
-        var candidates = detector.scan(pearls, owners, id -> PLAYER_LISTS.getWhitelist().contains(id),
+        var candidates = detector.scan(pearls, owners, id -> PLUGIN_CONFIG.autoLoad.canAutoRegister(id, AutoPearlNaming.baseAlias(PLUGIN_CONFIG.autoDetect.baseName)),
             (x, y, z) -> World.isChunkLoadedBlockPos(x, z) ? World.getBlock(x, y, z).name() : null,
             System.nanoTime());
         var eligible = candidates.stream().filter(this::eligible).toList();
@@ -100,10 +100,11 @@ public class AutoDetectModule extends Module {
     private boolean eligible(AutoPearlDetector.Candidate candidate) {
         var config = PLUGIN_CONFIG;
         String base = AutoPearlNaming.baseAlias(config.autoDetect.baseName);
-        if (base == null) return false;
+        if (base == null || !config.autoLoad.canAutoRegister(candidate.owner().uuid(), base)) return false;
         String target = AutoPearlNaming.target(scope, candidate.owner().uuid(), candidate.trigger());
         return BasePearlPolicy.canAssign(candidate.owner().uuid(), scope, base, target,
-            config.autoLoad.entries(candidate.owner().uuid()), config.autoDetect.snapshot());
+            config.autoLoad.entries(candidate.owner().uuid()), config.autoDetect.snapshot(),
+            config.autoLoad.hasExplicitBaseAccess(candidate.owner().uuid(), base));
     }
 
     private boolean register(AutoPearlDetector.Candidate candidate) {
@@ -112,7 +113,7 @@ public class AutoDetectModule extends Module {
         var pos = candidate.trigger();
         String target = AutoPearlNaming.target(scope, owner.uuid(), pos);
         var existing = config.autoDetect.get(target);
-        if (!enabledSetting() || !PLAYER_LISTS.getWhitelist().contains(owner.uuid())
+        if (!enabledSetting() || !config.autoLoad.canAutoRegister(owner.uuid(), AutoPearlNaming.baseAlias(config.autoDetect.baseName))
             || (existing == null && config.autoDetect.size() >= AutoPearlDetector.MAX_TRACKED))
             return false;
         // Do not overwrite or share an existing loader at this trigger.

@@ -16,6 +16,32 @@ public class PearlPlusConfig {
         public volatile String publicPullMessage = "{player} has been pulled !";
         public Map<UUID, List<String>> allowed = new LinkedHashMap<>();
         public Map<UUID, String> playerNames = new LinkedHashMap<>();
+        public Map<UUID, List<String>> baseAccess = new LinkedHashMap<>();
+
+        public synchronized void allowBase(UUID uuid, String name, String base) {
+            if (baseAccess == null) baseAccess = new LinkedHashMap<>();
+            var bases = baseAccess.computeIfAbsent(uuid, ignored -> new ArrayList<>());
+            if (bases.stream().noneMatch(b -> b.equalsIgnoreCase(base))) bases.add(base);
+            rememberName(uuid, name);
+        }
+
+        public synchronized boolean hasExplicitBaseAccess(UUID uuid, String base) {
+            return baseAccess != null && baseAccess.get(uuid) != null
+                && baseAccess.get(uuid).stream().anyMatch(b -> b.equalsIgnoreCase(base));
+        }
+
+        public synchronized boolean canAutoRegister(UUID uuid, String base) {
+            return hasExplicitBaseAccess(uuid, base) || entries(uuid).stream()
+                .flatMap(v -> PearlEntry.parse(v).stream()).anyMatch(p -> p.alias().equalsIgnoreCase(base));
+        }
+
+        public synchronized Map<UUID, List<String>> accessSnapshot() {
+            Map<UUID, List<String>> copy = new LinkedHashMap<>();
+            if (baseAccess != null) baseAccess.forEach((id, bases) -> {
+                if (id != null && bases != null) copy.put(id, new ArrayList<>(bases));
+            });
+            return copy;
+        }
 
         public synchronized List<String> entries(UUID uuid) {
             if (allowed == null) allowed = new LinkedHashMap<>();
@@ -46,16 +72,21 @@ public class PearlPlusConfig {
         }
 
         public synchronized boolean deny(UUID uuid, String alias) {
-            if (allowed == null) return false;
+            boolean removedAccess = false;
+            if (baseAccess != null && baseAccess.get(uuid) != null) {
+                removedAccess = baseAccess.get(uuid).removeIf(b -> b.equalsIgnoreCase(alias));
+                if (baseAccess.get(uuid).isEmpty()) baseAccess.remove(uuid);
+            }
+            if (allowed == null) return removedAccess;
             var entries = allowed.get(uuid);
-            if (entries == null) return false;
+            if (entries == null) return removedAccess;
             boolean removed = entries.removeIf(value -> PearlEntry.parse(value)
                 .map(p -> p.alias().equalsIgnoreCase(alias)).orElse(false));
             if (entries.isEmpty()) {
                 allowed.remove(uuid);
-                if (playerNames != null) playerNames.remove(uuid);
+                if (playerNames != null && (baseAccess == null || !baseAccess.containsKey(uuid))) playerNames.remove(uuid);
             }
-            return removed;
+            return removed || removedAccess;
         }
 
         public synchronized void rememberName(UUID uuid, String name) {

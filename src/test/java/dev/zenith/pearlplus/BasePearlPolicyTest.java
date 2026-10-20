@@ -7,6 +7,47 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BasePearlPolicyTest {
+    @Test void pluginAccessCanBeGrantedBeforeAnyPearlExists() {
+        var config = new PearlPlusConfig();
+        config.autoLoad.allowBase(eavox, "Eavox", "crewbase");
+        assertTrue(config.autoLoad.entries(eavox).isEmpty());
+        assertTrue(config.autoLoad.canAutoRegister(eavox, "CREWBASE"));
+        assertFalse(config.autoLoad.canAutoRegister(eavox, "anotherbase"));
+        assertFalse(config.autoLoad.canAutoRegister(friend, "crewbase"));
+        assertEquals(List.of("crewbase"), config.autoLoad.accessSnapshot().get(eavox));
+    }
+
+    @Test void noPluginEntryMeansNoAutoAccess() {
+        assertFalse(new PearlPlusConfig().autoLoad.canAutoRegister(eavox, "crewbase"));
+    }
+
+    @Test void denyRevokesBothPendingAndAssignedPluginAccess() {
+        var config = new PearlPlusConfig();
+        config.autoLoad.allowBase(eavox, "Eavox", "crewbase");
+        config.autoLoad.allow(eavox, "Eavox", new PearlEntry("crewbase", "target"));
+        assertTrue(config.autoLoad.deny(eavox, "CREWBASE"));
+        assertFalse(config.autoLoad.canAutoRegister(eavox, "crewbase"));
+        assertTrue(config.autoLoad.entries(eavox).isEmpty());
+        assertTrue(config.autoLoad.accessSnapshot().isEmpty());
+    }
+
+    @Test void pendingGrantCanBeRevokedBeforePearlIsDetected() {
+        var config = new PearlPlusConfig();
+        config.autoLoad.allowBase(eavox, "Eavox", "crewbase");
+        assertTrue(config.autoLoad.deny(eavox, "crewbase"));
+        assertFalse(config.autoLoad.canAutoRegister(eavox, "crewbase"));
+    }
+
+    @Test void explicitPluginRegrantCanRestoreKnownChamber() {
+        assertTrue(BasePearlPolicy.canAssign(eavox, scope, "crewbase", "old",
+            List.of(), Map.of("old", record(eavox, "crewbase")), true));
+    }
+
+    @Test void explicitGrantDoesNotMakeOldChambersReplaceCurrentAssignmentRepeatedly() {
+        assertFalse(BasePearlPolicy.canAssign(eavox, scope, "crewbase", "old",
+            List.of("crewbase=new"), Map.of("old", record(eavox, "crewbase")), true));
+    }
+
     private final UUID eavox = UUID.randomUUID();
     private final UUID friend = UUID.randomUUID();
     private final String scope = "server/overworld";

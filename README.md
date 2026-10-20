@@ -1,4 +1,4 @@
-# PearlPlus 1.1.6
+# PearlPlus 1.1.7
 
 Allow selected players to activate registered ZenithProxy pearl loaders through whispers or public chat, without granting account-owner permissions.
 
@@ -12,12 +12,12 @@ On Linux, run these shell commands **from your ZenithProxy folder**:
 
 ```sh
 mkdir -p plugins
-curl -fL --retry 3 -o plugins/PearlPlus-1.1.6.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.6/PearlPlus-1.1.6.jar
+curl -fL --retry 3 -o plugins/PearlPlus-1.1.7.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.7/PearlPlus-1.1.7.jar
 ```
 
 Use Zenith's **Java release channel**. Run `plugins on` in the **Zenith console**, then restart Zenith and run `plugins list` to confirm PearlPlus loaded. Remove older PearlPlus JARs before restarting, but keep the config.
 
-Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.6.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
+Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.7.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
 
 Configuration remains in `plugins/config/pearl-plus.json`. Existing `allowed` UUID lists and `alias=target` entries are preserved. The new `playerNames` map caches display names; older entries show UUIDs until a name is learned from an authorized request or an allow command. Listing never requires a network lookup.
 
@@ -38,7 +38,9 @@ pp delay <seconds>
 pp message <text>
 ```
 
-Register each loader first with `pearlLoader add <id> <x> <y> <z>`. `pp allow Alex Spawn AlexBase` grants Alex the keyword `Spawn` for the existing loader ID `AlexBase`. Omitting the ID uses the keyword itself. Keywords are case-insensitive; target IDs retain their exact case and must already exist. Neither may contain whitespace, control characters or `=`; the maximum is 128 characters.
+For automatic setup, `pp allow Eavox crewbase` authorizes Eavox at that base **before a pearl or loader exists**. `pp list` shows `crewbase (waiting for pearl)` until registration. This does not allow Eavox to log into or control the Zenith bot.
+
+For a manual assignment, register the loader with `pearlLoader add <id> <x> <y> <z>`, then use the explicit third argument: `pp allow Alex Spawn AlexBase`. Omitting the target ID now grants automatic base access instead of assuming a loader ID. Keywords are case-insensitive; target IDs retain their exact case and must already exist. Neither may contain whitespace, control characters or `=`; the maximum is 128 characters.
 
 `pp deny <UUID> <keyword>` works even when profile services are unavailable. `pp list` includes UUIDs and shows five players per page. Very long per-player lists are shortened in the display; the stored permissions are unaffected.
 
@@ -81,15 +83,15 @@ Public commands always allow trailing anti-spam text. The old `publicChatEnabled
 
 ## Automatic pearl setup (no player command or clicking)
 
-The owner names the bot's current base once, and grants access through Zenith's **regular whitelist**. For example, in the Zenith console:
+The owner names the bot's current base once and grants access through **PearlPlus's own allow list**. Zenith's login/control whitelist is separate and is never used or modified for this access. For example, in the Zenith console:
 
 ```text
 pp base Crewbase
-whitelist add Eavox
+pp allow Eavox crewbase
 pp on
 ```
 
-The bot now uses the keyword `crewbase` for each player's own automatically detected pearl. Eavox and another whitelisted player can both say `load crewbase`; each activates only their assigned chamber. Names are case-insensitive and must be single words (for example `Crewbase` or `Crew_Base`). `pp base` shows the current name. No random/generated player-facing keywords are assigned.
+The bot now uses the keyword `crewbase` for each player's own automatically detected pearl. Eavox and another player allowed at that base can both say `load crewbase`; each activates only their assigned chamber. Names are case-insensitive and must be single words (for example `Crewbase` or `Crew_Base`). `pp base` shows the current name. No random/generated player-facing keywords are assigned.
 
 Automatic detection is enabled by default, but waits until a base name has been configured. There is one current base name per bot instance; the bot does not infer base names or geographic regions. Existing manual permissions keep their names. PearlPlus checks visible ender pearls once per second without adding a separate scanning thread.
 
@@ -101,12 +103,16 @@ Automatic detection is enabled by default, but waits until a base name has been 
 
 Ownership comes from the server's projectile owner entity ID, matched to a visible player. Unknown owners are never inferred from the nearest player. An old pearl with unavailable ownership cannot be registered automatically; the bot should witness the owner throwing a new pearl. If different owners or an unidentified pearl share the same detected trigger, registration is skipped.
 
-Detection does not overwrite existing loaders or manual permission aliases. A single newly detected chamber can replace that player's previous automatic target for the same base. If multiple new eligible chambers are detected for the same player together, detection skips them instead of choosing randomly. A chamber already registered manually is left alone. Automatic entries are tied to their owner, the configured server address/port and dimension; loading is refused in a different location scope, after removal from the whitelist, or when the stored trigger is missing/changed. This does not prove the pearl is still present or that a teleport succeeded.
+Detection does not overwrite existing loaders or manual permission aliases. A single newly detected chamber can replace that player's previous automatic target for the same base. If multiple new eligible chambers are detected for the same player together, detection skips them instead of choosing randomly. A chamber already registered manually is left alone. Automatic entries are tied to their owner, the configured server address/port and dimension; loading is refused in a different location scope, after removal from the PearlPlus allow list, or when the stored trigger is missing/changed. This does not prove the pearl is still present or that a teleport succeeded.
 
-`pp autodetect off` disables new automatic registrations while keeping existing loaders. `pp off` disables both detection and loading. `pp deny` revokes a keyword; the remembered automatic registration prevents detection from silently restoring it, including after a restart. An owner can restore access with `pp allow` using the original target ID shown by `pp list`. Revoking a base keyword also blocks new chambers from automatically restoring that base permission.
+`pp autodetect off` disables new automatic registrations while keeping existing loaders. `pp off` disables both detection and loading. `pp deny` revokes a keyword; the remembered automatic registration prevents detection from silently restoring it, including after a restart. An owner can restore automatic access with `pp allow PlayerName crewbase`. The explicit third target-ID argument remains available for manual assignment. Revoking a base keyword also blocks new chambers from automatically restoring that base permission.
 
 To bound work and storage, detection skips scans with more than 256 visible pearls and stores at most 256 automatic chamber registrations. It saves at most one new chamber per second. Automated tests simulate the described layout; the actual chamber still needs an in-game smoke test.
 
 ### Upgrading from 1.1.5
 
 Run `pp base Crewbase` after upgrading. Active automatically generated permissions such as `pearl1` are renamed to the base keyword when their chamber is observed again. A revoked permission is not restored. If multiple eligible legacy chambers for one player are visible, choose the intended target explicitly with `pp allow PlayerName crewbase <targetId>` from `pp list`.
+
+### Access changes in 1.1.7
+
+Automatic setup and loading use PearlPlus permissions only. Players do not need to be on Zenith's whitelist, and being on Zenith's whitelist alone grants no pearl access. Existing saved PearlPlus permissions remain valid. `pp deny PlayerName crewbase` (or UUID) removes pending base access and the assigned keyword together. To use manual two-argument grants from older versions, now supply the target explicitly: `pp allow PlayerName keyword targetId`.
