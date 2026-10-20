@@ -8,6 +8,7 @@ import com.zenith.command.api.CommandUsage;
 import com.zenith.feature.api.ProfileData;
 import com.zenith.feature.whitelist.PlayerListsManager;
 import dev.zenith.pearlplus.PearlEntry;
+import dev.zenith.pearlplus.AutoPearlNaming;
 import dev.zenith.pearlplus.module.AutoLoadModule;
 import dev.zenith.pearlplus.module.AutoDetectModule;
 
@@ -32,7 +33,7 @@ public class AutoLoadCommand extends Command {
             .description("Allow players to load assigned pearls through whispers or public chat.")
             .usageLines("<on/off>", "allow <playerName> <keyword> [pearlId]",
                 "deny <playerName/UUID> <keyword>", "list [page]", "strict <on/off>",
-                "autodetect <on/off>", "delay <0-300 seconds>", "message <text>")
+                "base [name]", "autodetect <on/off>", "delay <0-300 seconds>", "message <text>")
             .aliases("pp").build();
     }
 
@@ -80,6 +81,25 @@ public class AutoLoadCommand extends Command {
                 boolean strict = getToggle(c, "toggle");
                 PLUGIN_CONFIG.autoLoad.allowNoiseAfterPearl = !strict;
                 c.getSource().getEmbed().title("Pearl+ strict " + toggleStrCaps(strict));
+                return OK;
+            })))
+            .then(literal("base").executes(c -> {
+                String base = AutoPearlNaming.baseAlias(PLUGIN_CONFIG.autoDetect.baseName);
+                c.getSource().getEmbed().title(base == null ? "Base not set" : "Base: " + base)
+                    .description("Set this bot's base with pp base Crewbase. Whitelisted players then use load crewbase.");
+                return OK;
+            }).then(argument("name", wordWithChars()).executes(c -> {
+                String base = AutoPearlNaming.baseAlias(getString(c, "name"));
+                if (base == null) {
+                    c.getSource().getEmbed().title("Invalid base name")
+                        .description("Use 1-128 characters without whitespace, control characters or '='.");
+                    return ERROR;
+                }
+                MODULE.get(AutoLoadModule.class).cancelPendingRequests();
+                MODULE.get(AutoDetectModule.class).setBase(base);
+                c.getSource().getEmbed().title("Pearl+ base set to " + base)
+                    .description("Whitelisted players can throw a pearl nearby. Once detected, use load " + base
+                        + " in public chat or whispers.");
                 return OK;
             })))
             .then(literal("autodetect").then(argument("toggle", toggle()).executes(c -> {

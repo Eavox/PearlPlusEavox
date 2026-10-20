@@ -71,6 +71,7 @@ public class PearlPlusConfig {
     public final AutoDetectConfig autoDetect = new AutoDetectConfig();
     public static final class AutoDetectConfig {
         public volatile boolean enabled = true;
+        public volatile String baseName = "";
         // Remember registered chambers so restart/rethrow cannot undo an owner's pp deny.
         public Map<String, AutoPearl> registered = new ConcurrentHashMap<>();
 
@@ -79,6 +80,10 @@ public class PearlPlusConfig {
         }
 
         public synchronized int size() { return registered == null ? 0 : registered.size(); }
+
+        public synchronized Map<String, AutoPearl> snapshot() {
+            return registered == null ? Map.of() : new LinkedHashMap<>(registered);
+        }
 
         public synchronized void remember(String target, AutoPearl pearl) {
             if (registered == null) registered = new ConcurrentHashMap<>();

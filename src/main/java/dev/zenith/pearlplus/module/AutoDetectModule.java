@@ -11,6 +11,7 @@ import com.zenith.util.ChatUtil;
 import com.zenith.util.config.Config.Client.Extra.PearlLoader.Pearl;
 import dev.zenith.pearlplus.AutoPearlDetector;
 import dev.zenith.pearlplus.AutoPearlNaming;
+import dev.zenith.pearlplus.BasePearlPolicy;
 import dev.zenith.pearlplus.PearlEntry;
 import dev.zenith.pearlplus.PearlPlusConfig.AutoPearl;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.object.ProjectileData;
@@ -44,13 +45,19 @@ public class AutoDetectModule extends Module {
         scope = null;
     }
 
+    public synchronized void setBase(String base) {
+        PLUGIN_CONFIG.autoDetect.baseName = base;
+        reset();
+    }
+
     public static String currentScope() {
         return CONFIG.client.server.address + ":" + CONFIG.client.server.port
             + "/" + World.getCurrentDimension().name();
     }
 
     private synchronized void scanTick() {
-        if (!enabledSetting() || !Proxy.getInstance().isConnected() || Proxy.getInstance().isInQueue()) return;
+        if (!enabledSetting() || AutoPearlNaming.baseAlias(PLUGIN_CONFIG.autoDetect.baseName) == null
+            || !Proxy.getInstance().isConnected() || Proxy.getInstance().isInQueue()) return;
         if (++ticks < 20) return;
         ticks = 0;
         String currentScope = currentScope();
@@ -79,7 +86,10 @@ public class AutoDetectModule extends Module {
         var candidates = detector.scan(pearls, owners, id -> PLAYER_LISTS.getWhitelist().contains(id),
             (x, y, z) -> World.isChunkLoadedBlockPos(x, z) ? World.getBlock(x, y, z).name() : null,
             System.nanoTime());
-        for (var candidate : candidates) {
+        var eligible = candidates.stream().filter(this::eligible).toList();
+        for (var candidate : eligible) {
+            // Multiple new chambers for one player at once are ambiguous; do not pick one randomly.
+            if (eligible.stream().filter(c -> c.owner().uuid().equals(candidate.owner().uuid())).count() != 1) continue;
             if (MODULE.get(AutoLoadModule.class).registerWhenIdle(() -> register(candidate))) {
                 saveConfigAsync();
                 break; // at most one new chamber/save/whisper per second
@@ -87,21 +97,34 @@ public class AutoDetectModule extends Module {
         }
     }
 
+    private boolean eligible(AutoPearlDetector.Candidate candidate) {
+        var config = PLUGIN_CONFIG;
+        String base = AutoPearlNaming.baseAlias(config.autoDetect.baseName);
+        if (base == null) return false;
+        String target = AutoPearlNaming.target(scope, candidate.owner().uuid(), candidate.trigger());
+        return BasePearlPolicy.canAssign(candidate.owner().uuid(), scope, base, target,
+            config.autoLoad.entries(candidate.owner().uuid()), config.autoDetect.snapshot());
+    }
+
     private boolean register(AutoPearlDetector.Candidate candidate) {
         var config = PLUGIN_CONFIG;
         var owner = candidate.owner();
         var pos = candidate.trigger();
         String target = AutoPearlNaming.target(scope, owner.uuid(), pos);
+        var existing = config.autoDetect.get(target);
         if (!enabledSetting() || !PLAYER_LISTS.getWhitelist().contains(owner.uuid())
-            || config.autoDetect.get(target) != null || config.autoDetect.size() >= AutoPearlDetector.MAX_TRACKED)
+            || (existing == null && config.autoDetect.size() >= AutoPearlDetector.MAX_TRACKED))
             return false;
         // Do not overwrite or share an existing loader at this trigger.
-        if (CONFIG.client.extra.pearlLoader.pearls.stream().anyMatch(p ->
+        if (existing == null && CONFIG.client.extra.pearlLoader.pearls.stream().anyMatch(p ->
             p.id().equals(target) || (p.x() == pos.x() && p.y() == pos.y() && p.z() == pos.z()))) return false;
+        if (existing != null && CONFIG.client.extra.pearlLoader.pearls.stream().noneMatch(p ->
+            p.id().equals(target) && p.x() == pos.x() && p.y() == pos.y() && p.z() == pos.z())) return false;
         synchronized (config.autoLoad) {
-            String alias = AutoPearlNaming.availableAlias(config.autoLoad.entries(owner.uuid()));
-            if (alias == null) return false;
-            CONFIG.client.extra.pearlLoader.pearls.add(new Pearl(target, pos.x(), pos.y(), pos.z()));
+            String alias = AutoPearlNaming.baseAlias(config.autoDetect.baseName);
+            if (alias == null || !eligible(candidate)) return false;
+            if (existing == null) CONFIG.client.extra.pearlLoader.pearls.add(new Pearl(target, pos.x(), pos.y(), pos.z()));
+            else config.autoLoad.deny(owner.uuid(), existing.alias());
             config.autoLoad.allow(owner.uuid(), owner.name(), new PearlEntry(alias, target));
             config.autoDetect.remember(target, new AutoPearl(owner.uuid(), alias, scope, pos.x(), pos.y(), pos.z()));
             info("Automatically registered {} for {}", alias, owner.name());

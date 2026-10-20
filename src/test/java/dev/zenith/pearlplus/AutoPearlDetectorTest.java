@@ -114,8 +114,12 @@ class AutoPearlDetectorTest {
         assertTrue(PearlEntry.validToken(id));
     }
 
-    @Test void automaticAliasesDoNotOverwriteManualAliases() {
-        assertEquals("pearl3", AutoPearlNaming.availableAlias(List.of("PEARL1=Manual", "pearl2=Other", "Spawn")));
+    @Test void baseNameIsTheAutomaticKeyword() {
+        assertEquals("crewbase", AutoPearlNaming.baseAlias("Crewbase"));
+        assertNull(AutoPearlNaming.baseAlias(""));
+        assertNull(AutoPearlNaming.baseAlias(null));
+        assertNull(AutoPearlNaming.baseAlias("Crew Base"));
+        assertNull(AutoPearlNaming.baseAlias("Crew=Base"));
     }
 
     @Test void revokingPermissionDoesNotEraseRememberedRegistration() {
