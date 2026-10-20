@@ -27,6 +27,12 @@ public class AutoDetectModule extends Module {
     private final AutoPearlDetector detector = new AutoPearlDetector();
     private int ticks;
     private String scope;
+    private volatile String scanStatus = "No scan yet";
+
+    public String status() {
+        return "Plugin: " + PLUGIN_CONFIG.autoLoad.enabled + "; autodetect: " + PLUGIN_CONFIG.autoDetect.enabled
+            + "; base: " + PLUGIN_CONFIG.autoDetect.baseName + "\n" + scanStatus;
+    }
 
     @Override public boolean enabledSetting() {
         return PLUGIN_CONFIG.autoLoad.enabled && PLUGIN_CONFIG.autoDetect.enabled;
@@ -43,6 +49,7 @@ public class AutoDetectModule extends Module {
         detector.clear();
         ticks = 0;
         scope = null;
+        scanStatus = "Waiting for a fresh scan";
     }
 
     public synchronized void setBase(String base) {
@@ -70,7 +77,7 @@ public class AutoDetectModule extends Module {
         for (var entity : CACHE.getEntityCache().getEntities().values()) {
             if (entity instanceof EntityPlayer && entity.getUuid() != null) {
                 String name = CACHE.getTabListCache().get(entity.getUuid())
-                    .map(p -> p.getName()).orElse(null);
+                    .map(p -> p.getName()).orElse(PLUGIN_CONFIG.autoLoad.displayName(entity.getUuid()));
                 if (name != null && !name.isBlank())
                     owners.put(entity.getEntityId(), new AutoPearlDetector.Owner(entity.getUuid(), name));
             } else if (entity.getEntityType() == EntityType.ENDER_PEARL && !entity.isRemoved()) {
@@ -87,6 +94,10 @@ public class AutoDetectModule extends Module {
             (x, y, z) -> World.isChunkLoadedBlockPos(x, z) ? World.getBlock(x, y, z).name() : null,
             System.nanoTime());
         var eligible = candidates.stream().filter(this::eligible).toList();
+        String base = AutoPearlNaming.baseAlias(PLUGIN_CONFIG.autoDetect.baseName);
+        long permitted = owners.values().stream().filter(o -> PLUGIN_CONFIG.autoLoad.canAutoRegister(o.uuid(), base)).count();
+        scanStatus = "Visible pearls: " + pearls.size() + "; visible players with base access: " + permitted
+            + "; settled candidates: " + candidates.size() + "; eligible assignments: " + eligible.size();
         for (var candidate : eligible) {
             // Multiple new chambers for one player at once are ambiguous; do not pick one randomly.
             if (eligible.stream().filter(c -> c.owner().uuid().equals(candidate.owner().uuid())).count() != 1) continue;
@@ -125,7 +136,7 @@ public class AutoDetectModule extends Module {
             String alias = AutoPearlNaming.baseAlias(config.autoDetect.baseName);
             if (alias == null || !eligible(candidate)) return false;
             if (existing == null) CONFIG.client.extra.pearlLoader.pearls.add(new Pearl(target, pos.x(), pos.y(), pos.z()));
-            else config.autoLoad.deny(owner.uuid(), existing.alias());
+            else config.autoLoad.removeAssignment(owner.uuid(), existing.alias());
             config.autoLoad.allow(owner.uuid(), owner.name(), new PearlEntry(alias, target));
             config.autoDetect.remember(target, new AutoPearl(owner.uuid(), alias, scope, pos.x(), pos.y(), pos.z()));
             info("Automatically registered {} for {}", alias, owner.name());

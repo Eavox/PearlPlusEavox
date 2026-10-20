@@ -198,7 +198,12 @@ public class AutoLoadModule extends Module {
             if (!publicChat) {
                 sendClientPacketAsync(ChatUtil.getWhisperChatPacket(name, "Pearl interaction completed: " + pearl.alias()));
             }
-            refill.offer(player, name, pearl.alias(), session);
+            try {
+                refill.offer(player, name, pearl.alias(), session);
+            } catch (Exception e) {
+                // Optional refill failures must not leave registration blocked behind a completed load.
+                warn("Spare pearl offer failed: {}", e.getMessage());
+            }
             int delay = Math.clamp(PLUGIN_CONFIG.autoLoad.publicChatDelaySeconds, 0, 300);
             String template = PLUGIN_CONFIG.autoLoad.publicPullMessage;
             announcement = scheduler.schedule(() -> {

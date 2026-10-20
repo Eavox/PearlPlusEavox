@@ -1,4 +1,4 @@
-# PearlPlus 1.1.8
+# PearlPlus 1.1.9
 
 Allow selected players to activate registered ZenithProxy pearl loaders through whispers or public chat, without granting account-owner permissions.
 
@@ -12,12 +12,12 @@ On Linux, run these shell commands **from your ZenithProxy folder**:
 
 ```sh
 mkdir -p plugins
-curl -fL --retry 3 -o plugins/PearlPlus-1.1.8.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.8/PearlPlus-1.1.8.jar
+curl -fL --retry 3 -o plugins/PearlPlus-1.1.9.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.9/PearlPlus-1.1.9.jar
 ```
 
 Use Zenith's **Java release channel**. Run `plugins on` in the **Zenith console**, then restart Zenith and run `plugins list` to confirm PearlPlus loaded. Remove older PearlPlus JARs before restarting, but keep the config.
 
-Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.8.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
+Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.9.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
 
 Configuration remains in `plugins/config/pearl-plus.json`. Existing `allowed` UUID lists and `alias=target` entries are preserved. The new `playerNames` map caches display names; older entries show UUIDs until a name is learned from an authorized request or an allow command. Listing never requires a network lookup.
 
@@ -26,6 +26,7 @@ Configuration remains in `plugins/config/pearl-plus.json`. Existing `allowed` UU
 Commands require the account owner. `pp` is an alias for `pearl+`.
 
 ```text
+pp status
 pp on
 pp off
 pp allow <playerName> <keyword> [pearlId]
@@ -119,6 +120,10 @@ To bound work and storage, detection skips scans with more than 256 visible pear
 
 Run `pp base Crewbase` after upgrading. Active automatically generated permissions such as `pearl1` are renamed to the base keyword when their chamber is observed again. A revoked permission is not restored. If multiple eligible legacy chambers for one player are visible, choose the intended target explicitly with `pp allow PlayerName crewbase <targetId>` from `pp list`.
 
-### Access changes in 1.1.8
+### Access changes in 1.1.9
 
 Automatic setup and loading use PearlPlus permissions only. Players do not need to be on Zenith's whitelist, and being on Zenith's whitelist alone grants no pearl access. Existing saved PearlPlus permissions remain valid. `pp deny PlayerName crewbase` (or UUID) removes pending base access and the assigned keyword together. To use manual two-argument grants from older versions, now supply the target explicitly: `pp allow PlayerName keyword targetId`.
+
+### Detection troubleshooting
+
+Run `pp status` to see the configured base, enable flags, visible pearls, visible players with PearlPlus base access, and settled/eligible candidates. `pp base Crewbase` and `pp allow Player Crewbase` must use the same base name. No Zenith login whitelist entry is required. Version 1.1.9 preserves base grants when replacing assignments and uses cached allow-list names when a visible player has no tab-list entry. Optional refill errors no longer block completion cleanup.

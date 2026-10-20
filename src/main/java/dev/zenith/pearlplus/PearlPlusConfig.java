@@ -77,16 +77,21 @@ public class PearlPlusConfig {
                 removedAccess = baseAccess.get(uuid).removeIf(b -> b.equalsIgnoreCase(alias));
                 if (baseAccess.get(uuid).isEmpty()) baseAccess.remove(uuid);
             }
-            if (allowed == null) return removedAccess;
+            return removeAssignment(uuid, alias) || removedAccess;
+        }
+
+        /** Updating a chamber must not revoke the owner's independent base grant. */
+        public synchronized boolean removeAssignment(UUID uuid, String alias) {
+            if (allowed == null) return false;
             var entries = allowed.get(uuid);
-            if (entries == null) return removedAccess;
+            if (entries == null) return false;
             boolean removed = entries.removeIf(value -> PearlEntry.parse(value)
                 .map(p -> p.alias().equalsIgnoreCase(alias)).orElse(false));
             if (entries.isEmpty()) {
                 allowed.remove(uuid);
                 if (playerNames != null && (baseAccess == null || !baseAccess.containsKey(uuid))) playerNames.remove(uuid);
             }
-            return removed || removedAccess;
+            return removed;
         }
 
         public synchronized void rememberName(UUID uuid, String name) {

@@ -7,6 +7,36 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BasePearlPolicyTest {
+    @Test void updatingAnAssignmentPreservesIndependentBaseAccess() {
+        var config = new PearlPlusConfig().autoLoad;
+        config.allowBase(eavox, "Eavox", "crewbase");
+        config.allow(eavox, "Eavox", new PearlEntry("crewbase", "old"));
+        assertTrue(config.removeAssignment(eavox, "crewbase"));
+        assertTrue(config.hasExplicitBaseAccess(eavox, "crewbase"));
+        assertTrue(config.canAutoRegister(eavox, "crewbase"));
+        config.allow(eavox, "Eavox", new PearlEntry("crewbase", "new"));
+        assertEquals(List.of("crewbase=new"), config.entries(eavox));
+        assertTrue(config.deny(eavox, "crewbase"));
+        assertFalse(config.canAutoRegister(eavox, "crewbase"));
+    }
+
+    @Test void pendingBaseGrantReachesDetectorWithoutZenithWhitelist() {
+        var config = new PearlPlusConfig().autoLoad;
+        var detector = new AutoPearlDetector();
+        var pearl = new AutoPearlDetector.Pearl(UUID.randomUUID(), 7, 2.5, 10.3, 3.5);
+        var owners = Map.of(7, new AutoPearlDetector.Owner(eavox, "Eavox"));
+        AutoPearlDetector.Blocks chamber = (x,y,z) -> y == 10 ? "water" : y == 11 ? "oak_trapdoor" : "air";
+        detector.scan(List.of(pearl), owners, id -> config.canAutoRegister(id, "crewbase"), chamber, 0);
+        config.allowBase(eavox, "Eavox", "crewbase");
+        var detected = detector.scan(List.of(pearl), owners, id -> config.canAutoRegister(id, "crewbase"),
+            chamber, java.util.concurrent.TimeUnit.SECONDS.toNanos(6));
+        assertEquals(1, detected.size());
+        assertEquals(eavox, detected.getFirst().owner().uuid());
+        config.deny(eavox, "crewbase");
+        assertTrue(detector.scan(List.of(pearl), owners, id -> config.canAutoRegister(id, "crewbase"),
+            chamber, java.util.concurrent.TimeUnit.SECONDS.toNanos(7)).isEmpty());
+    }
+
     @Test void pluginAccessCanBeGrantedBeforeAnyPearlExists() {
         var config = new PearlPlusConfig();
         config.autoLoad.allowBase(eavox, "Eavox", "crewbase");

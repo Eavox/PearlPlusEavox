@@ -33,7 +33,7 @@ public class AutoLoadCommand extends Command {
             .description("Allow players to load assigned pearls through whispers or public chat.")
             .usageLines("<on/off>", "allow <playerName> <keyword> [pearlId]",
                 "deny <playerName/UUID> <keyword>", "list [page]", "strict <on/off>",
-                "base [name]", "autodetect <on/off>", "delay <0-300 seconds>", "message <text>")
+                "status", "base [name]", "autodetect <on/off>", "delay <0-300 seconds>", "message <text>")
             .aliases("pp").build();
     }
 
@@ -46,6 +46,11 @@ public class AutoLoadCommand extends Command {
                 MODULE.get(AutoLoadModule.class).syncEnabledFromConfig();
                 MODULE.get(AutoDetectModule.class).syncEnabledFromConfig();
                 c.getSource().getEmbed().title("Pearl+ " + toggleStrCaps(enabled));
+                return OK;
+            }))
+            .then(literal("status").executes(c -> {
+                c.getSource().getEmbed().title("Pearl+ detection status")
+                    .description(MODULE.get(AutoDetectModule.class).status());
                 return OK;
             }))
             .then(literal("allow").then(argument("playerName", wordWithChars())
