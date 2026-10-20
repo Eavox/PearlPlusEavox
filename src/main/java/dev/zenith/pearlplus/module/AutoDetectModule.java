@@ -28,10 +28,12 @@ public class AutoDetectModule extends Module {
     private int ticks;
     private String scope;
     private volatile String scanStatus = "No scan yet";
+    private volatile String registrationStatus = "";
+    private String lastRegistrationError = "";
 
     public String status() {
         return "Plugin: " + PLUGIN_CONFIG.autoLoad.enabled + "; autodetect: " + PLUGIN_CONFIG.autoDetect.enabled
-            + "; base: " + PLUGIN_CONFIG.autoDetect.baseName + "\n" + scanStatus;
+            + "; base: " + PLUGIN_CONFIG.autoDetect.baseName + "\n" + scanStatus + "\n" + registrationStatus;
     }
 
     @Override public boolean enabledSetting() {
@@ -98,14 +100,60 @@ public class AutoDetectModule extends Module {
         long permitted = owners.values().stream().filter(o -> PLUGIN_CONFIG.autoLoad.canAutoRegister(o.uuid(), base)).count();
         scanStatus = "Visible pearls: " + pearls.size() + "; visible players with base access: " + permitted
             + "; settled candidates: " + candidates.size() + "; eligible assignments: " + eligible.size();
+        var outcomes = new ArrayList<String>();
         for (var candidate : eligible) {
-            // Multiple new chambers for one player at once are ambiguous; do not pick one randomly.
-            if (eligible.stream().filter(c -> c.owner().uuid().equals(candidate.owner().uuid())).count() != 1) continue;
-            if (MODULE.get(AutoLoadModule.class).registerWhenIdle(() -> register(candidate))) {
-                saveConfigAsync();
-                break; // at most one new chamber/save/whisper per second
+            String player = candidate.owner().name();
+            // Counts alone cannot distinguish two players from two chambers belonging to one player.
+            long chambers = eligible.stream().filter(c -> c.owner().uuid().equals(candidate.owner().uuid())).count();
+            if (chambers != 1) {
+                String reason = player + ": " + chambers + " eligible chambers; cannot choose which pearl to assign";
+                if (!outcomes.contains(reason)) outcomes.add(reason);
+                continue;
+            }
+            String[] reason = {"waiting for the load module (busy or not started)"};
+            try {
+                if (MODULE.get(AutoLoadModule.class).registerWhenIdle(() -> {
+                    reason[0] = registrationBlock(candidate);
+                    return reason[0] == null && register(candidate);
+                })) {
+                    outcomes.add(player + ": registered successfully");
+                    registrationStatus = String.join("\n", outcomes);
+                    saveConfigAsync();
+                    return; // at most one new chamber/save/whisper per second
+                }
+                outcomes.add(player + ": " + (reason[0] == null ? "assignment changed during registration; retrying" : reason[0]));
+            } catch (Exception e) {
+                String failure = player + ": " + e.getClass().getSimpleName() + ": " + e.getMessage();
+                outcomes.add(failure);
+                if (!failure.equals(lastRegistrationError)) {
+                    error("Automatic pearl registration failed", e);
+                    lastRegistrationError = failure;
+                }
             }
         }
+        registrationStatus = outcomes.isEmpty() ? "No pending eligible assignments" : String.join("\n", outcomes);
+    }
+
+    private String registrationBlock(AutoPearlDetector.Candidate candidate) {
+        var owner = candidate.owner();
+        var pos = candidate.trigger();
+        String target = AutoPearlNaming.target(scope, owner.uuid(), pos);
+        var existing = PLUGIN_CONFIG.autoDetect.get(target);
+        if (!enabledSetting()) return "automatic detection is disabled";
+        if (!PLUGIN_CONFIG.autoLoad.canAutoRegister(owner.uuid(), AutoPearlNaming.baseAlias(PLUGIN_CONFIG.autoDetect.baseName)))
+            return "base permission was removed";
+        if (existing == null && PLUGIN_CONFIG.autoDetect.size() >= AutoPearlDetector.MAX_TRACKED)
+            return "saved chamber limit reached (256)";
+        if (existing == null) {
+            for (var pearl : CONFIG.client.extra.pearlLoader.pearls) {
+                if (pearl.id().equals(target) || (pearl.x() == pos.x() && pearl.y() == pos.y() && pearl.z() == pos.z()))
+                    return "existing Zenith loader '" + pearl.id() + "' conflicts at " + pos.x() + " " + pos.y() + " " + pos.z();
+            }
+        } else if (CONFIG.client.extra.pearlLoader.pearls.stream().noneMatch(p ->
+            p.id().equals(target) && p.x() == pos.x() && p.y() == pos.y() && p.z() == pos.z())) {
+            return "saved automatic chamber has a missing or moved Zenith loader '" + target + "'";
+        }
+        return null;
     }
 
     private boolean eligible(AutoPearlDetector.Candidate candidate) {
@@ -124,14 +172,7 @@ public class AutoDetectModule extends Module {
         var pos = candidate.trigger();
         String target = AutoPearlNaming.target(scope, owner.uuid(), pos);
         var existing = config.autoDetect.get(target);
-        if (!enabledSetting() || !config.autoLoad.canAutoRegister(owner.uuid(), AutoPearlNaming.baseAlias(config.autoDetect.baseName))
-            || (existing == null && config.autoDetect.size() >= AutoPearlDetector.MAX_TRACKED))
-            return false;
-        // Do not overwrite or share an existing loader at this trigger.
-        if (existing == null && CONFIG.client.extra.pearlLoader.pearls.stream().anyMatch(p ->
-            p.id().equals(target) || (p.x() == pos.x() && p.y() == pos.y() && p.z() == pos.z()))) return false;
-        if (existing != null && CONFIG.client.extra.pearlLoader.pearls.stream().noneMatch(p ->
-            p.id().equals(target) && p.x() == pos.x() && p.y() == pos.y() && p.z() == pos.z())) return false;
+        if (registrationBlock(candidate) != null) return false;
         synchronized (config.autoLoad) {
             String alias = AutoPearlNaming.baseAlias(config.autoDetect.baseName);
             if (alias == null || !eligible(candidate)) return false;
