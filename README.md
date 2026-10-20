@@ -1,4 +1,4 @@
-# PearlPlus 1.1.10
+# PearlPlus 1.1.11
 
 Allow selected players to activate registered ZenithProxy pearl loaders through whispers or public chat, without granting account-owner permissions.
 
@@ -12,12 +12,12 @@ On Linux, run these shell commands **from your ZenithProxy folder**:
 
 ```sh
 mkdir -p plugins
-curl -fL --retry 3 -o plugins/PearlPlus-1.1.10.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.10/PearlPlus-1.1.10.jar
+curl -fL --retry 3 -o plugins/PearlPlus-1.1.11.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.11/PearlPlus-1.1.11.jar
 ```
 
 Use Zenith's **Java release channel**. Run `plugins on` in the **Zenith console**, then restart Zenith and run `plugins list` to confirm PearlPlus loaded. Remove older PearlPlus JARs before restarting, but keep the config.
 
-Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.10.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
+Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.11.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
 
 Configuration remains in `plugins/config/pearl-plus.json`. Existing `allowed` UUID lists and `alias=target` entries are preserved. The new `playerNames` map caches display names; older entries show UUIDs until a name is learned from an authorized request or an allow command. Listing never requires a network lookup.
 
@@ -110,7 +110,7 @@ Automatic detection is enabled by default, but waits until a base name has been 
 
 Ownership comes from the server's projectile owner entity ID, matched to a visible player. Unknown owners are never inferred from the nearest player. An old pearl with unavailable ownership cannot be registered automatically; the bot should witness the owner throwing a new pearl. If different owners or an unidentified pearl share the same detected trigger, registration is skipped.
 
-Detection does not overwrite existing loaders or manual permission aliases. A single newly detected chamber can replace that player's previous automatic target for the same base. If multiple new eligible chambers are detected for the same player together, detection skips them instead of choosing randomly. A chamber already registered manually is left alone. Automatic entries are tied to their owner, the configured server address/port and dimension; loading is refused in a different location scope, after removal from the PearlPlus allow list, or when the stored trigger is missing/changed. This does not prove the pearl is still present or that a teleport succeeded.
+Detection preserves manual permission aliases. It reuses an existing automatic loader at the exact detected spot when no other player owns or has access to it, recovering automatic loaders left behind by older configurations. Manual loaders and conflicting ownership remain protected. The first assigned chamber stays pinned for that player and base, including after loading, rethrowing, and restarting. Later pearls in other chambers are ignored. With no saved assignment, detection considers settled chambers in first-observed order; pearls already present when the bot connects have no known historical throw order. A chamber already registered manually is left alone. Automatic entries are tied to their owner, the configured server address/port and dimension; loading is refused in a different location scope, after removal from the PearlPlus allow list, or when the stored trigger is missing/changed. This does not prove the pearl is still present or that a teleport succeeded.
 
 `pp autodetect off` disables new automatic registrations while keeping existing loaders. `pp off` disables both detection and loading. `pp deny` revokes a keyword; the remembered automatic registration prevents detection from silently restoring it, including after a restart. An owner can restore automatic access with `pp allow PlayerName crewbase`. The explicit third target-ID argument remains available for manual assignment. Revoking a base keyword also blocks new chambers from automatically restoring that base permission.
 
@@ -120,12 +120,14 @@ To bound work and storage, detection skips scans with more than 256 visible pear
 
 Run `pp base Crewbase` after upgrading. Active automatically generated permissions such as `pearl1` are renamed to the base keyword when their chamber is observed again. A revoked permission is not restored. If multiple eligible legacy chambers for one player are visible, choose the intended target explicitly with `pp allow PlayerName crewbase <targetId>` from `pp list`.
 
-### Access changes in 1.1.10
+### Access changes in 1.1.11
 
 Automatic setup and loading use PearlPlus permissions only. Players do not need to be on Zenith's whitelist, and being on Zenith's whitelist alone grants no pearl access. Existing saved PearlPlus permissions remain valid. `pp deny PlayerName crewbase` (or UUID) removes pending base access and the assigned keyword together. To use manual two-argument grants from older versions, now supply the target explicitly: `pp allow PlayerName keyword targetId`.
 
 ### Detection troubleshooting
 
-Run `pp status` to see the configured base, enable flags, visible pearls, visible players with PearlPlus base access, and settled/eligible candidates. `pp base Crewbase` and `pp allow Player Crewbase` must use the same base name. No Zenith login whitelist entry is required. Version 1.1.10 preserves base grants when replacing assignments and uses cached allow-list names when a visible player has no tab-list entry. Optional refill errors no longer block completion cleanup.
+Run `pp status` to see the configured base, enable flags, visible pearls, visible players with PearlPlus base access, and settled/eligible candidates. `pp base Crewbase` and `pp allow Player Crewbase` must use the same base name. No Zenith login whitelist entry is required. Version 1.1.11 preserves base grants when replacing assignments and uses cached allow-list names when a visible player has no tab-list entry. Optional refill errors no longer block completion cleanup.
 
-Version 1.1.10 adds per-player registration blockers to `pp status`: ambiguous chambers, existing loader conflicts, missing saved loaders, capacity limits, busy loading, and registration exceptions. Candidate counts mean the scan passed, not that assignments were saved. Existing loader conflicts remain protected from automatic overwrites.
+Version 1.1.10 added per-player registration blockers to `pp status`: ambiguous chambers, existing loader conflicts, missing saved loaders, capacity limits, busy loading, and registration exceptions. Candidate counts mean the scan passed, not that assignments were saved. Existing loader conflicts remain protected from automatic overwrites.
+
+Version 1.1.11 pins the first assignment and recovers unclaimed automatic loaders at the detected spot. Existing assigned spots take priority over later pearls. No pearl-refill or chat commands changed.

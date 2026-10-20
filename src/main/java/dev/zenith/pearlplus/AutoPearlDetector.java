@@ -9,6 +9,7 @@ public final class AutoPearlDetector {
     public static final int MAX_TRACKED = 256;
     private static final long SETTLE_TIME = TimeUnit.SECONDS.toNanos(5);
     private final Map<UUID, Observation> observations = new HashMap<>();
+    private long sequence;
 
     public record Position(int x, int y, int z) {}
     public record Owner(UUID uuid, String name) {}
@@ -19,10 +20,11 @@ public final class AutoPearlDetector {
     private static final class Observation {
         // Bind only on first sight. Never guess ownership from proximity or a reused entity ID.
         final Owner owner;
+        final long order;
         Position trigger;
         long since;
         double x, y, z;
-        Observation(Owner owner) { this.owner = owner; }
+        Observation(Owner owner, long order) { this.owner = owner; this.order = order; }
     }
 
     public void clear() { observations.clear(); }
@@ -39,7 +41,7 @@ public final class AutoPearlDetector {
             if (pearl.uuid() == null) continue;
             visible.add(pearl.uuid());
             Observation observation = observations.computeIfAbsent(pearl.uuid(),
-                ignored -> new Observation(pearl.ownerEntityId() > 0 ? owners.get(pearl.ownerEntityId()) : null));
+                ignored -> new Observation(pearl.ownerEntityId() > 0 ? owners.get(pearl.ownerEntityId()) : null, sequence++));
             Position trigger = findTrigger(pearl, blocks).orElse(null);
             if (trigger == null) {
                 observation.trigger = null;
@@ -76,6 +78,7 @@ public final class AutoPearlDetector {
                 }
             }
         }
+        ready.sort(Comparator.comparingLong(c -> observations.get(c.pearlUuid()).order));
         return ready;
     }
 

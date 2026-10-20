@@ -102,8 +102,8 @@ class BasePearlPolicyTest {
             List.of("crewbase=manual"), Map.of()));
     }
 
-    @Test void newChamberCanReplaceSamePlayersOldAutomaticBaseTarget() {
-        assertTrue(BasePearlPolicy.canAssign(eavox, scope, "crewbase", "new",
+    @Test void newChamberCannotReplacePlayersOriginalSpot() {
+        assertFalse(BasePearlPolicy.canAssign(eavox, scope, "crewbase", "new",
             List.of("crewbase=old"), Map.of("old", record(eavox, "crewbase"))));
     }
 
