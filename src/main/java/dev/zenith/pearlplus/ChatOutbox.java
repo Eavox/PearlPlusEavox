@@ -5,13 +5,17 @@ import java.util.concurrent.TimeUnit;
 
 /** Bounded FIFO with a shared cooldown for public chat and whispers. */
 public final class ChatOutbox {
-    public record Message(Object session, String recipient, String text, Runnable onDispatch, long queuedAt) {}
+    public record Message(Object session, String recipient, String text, Runnable onDispatch, long queuedAt, java.util.function.BooleanSupplier valid) {}
     private final ArrayDeque<Message> pending = new ArrayDeque<>();
     private long lastSent;
     private boolean sent;
     public synchronized boolean add(Object session, String recipient, String text, Runnable onDispatch, long now) {
+        return add(session, recipient, text, onDispatch, now, () -> true);
+    }
+    public synchronized boolean add(Object session, String recipient, String text, Runnable onDispatch, long now,
+                                    java.util.function.BooleanSupplier valid) {
         if (pending.size() >= 64) return false;
-        pending.add(new Message(session, recipient, text, onDispatch, now));
+        pending.add(new Message(session, recipient, text, onDispatch, now, valid));
         return true;
     }
     public synchronized Message poll(Object session, long now) {

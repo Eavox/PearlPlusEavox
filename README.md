@@ -1,4 +1,4 @@
-# PearlPlus 1.1.12
+# PearlPlus 1.1.13
 
 Allow selected players to activate registered ZenithProxy pearl loaders through whispers or public chat, without granting account-owner permissions.
 
@@ -12,12 +12,12 @@ On Linux, run these shell commands **from your ZenithProxy folder**:
 
 ```sh
 mkdir -p plugins
-curl -fL --retry 3 -o plugins/PearlPlus-1.1.12.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.12/PearlPlus-1.1.12.jar
+curl -fL --retry 3 -o plugins/PearlPlus-1.1.13.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.13/PearlPlus-1.1.13.jar
 ```
 
 Use Zenith's **Java release channel**. Run `plugins on` in the **Zenith console**, then restart Zenith and run `plugins list` to confirm PearlPlus loaded. Remove older PearlPlus JARs before restarting, but keep the config.
 
-Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.12.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
+Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.13.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
 
 Configuration remains in `plugins/config/pearl-plus.json`. Existing `allowed` UUID lists and `alias=target` entries are preserved. The new `playerNames` map caches display names; older entries show UUIDs until a name is learned from an authorized request or an allow command. Listing never requires a network lookup.
 
@@ -120,20 +120,27 @@ To bound work and storage, detection skips scans with more than 256 visible pear
 
 Run `pp base Crewbase` after upgrading. Active automatically generated permissions such as `pearl1` are renamed to the base keyword when their chamber is observed again. A revoked permission is not restored. If multiple eligible legacy chambers for one player are visible, choose the intended target explicitly with `pp allow PlayerName crewbase <targetId>` from `pp list`.
 
-### Access changes in 1.1.12
+### Access changes in 1.1.13
 
 Automatic setup and loading use PearlPlus permissions only. Players do not need to be on Zenith's whitelist, and being on Zenith's whitelist alone grants no pearl access. Existing saved PearlPlus permissions remain valid. `pp deny PlayerName crewbase` (or UUID) removes pending base access and the assigned keyword together. To use manual two-argument grants from older versions, now supply the target explicitly: `pp allow PlayerName keyword targetId`.
 
 ### Detection troubleshooting
 
-Run `pp status` to see the configured base, enable flags, visible pearls, visible players with PearlPlus base access, and settled/eligible candidates. `pp base Crewbase` and `pp allow Player Crewbase` must use the same base name. No Zenith login whitelist entry is required. Version 1.1.12 preserves base grants when replacing assignments and uses cached allow-list names when a visible player has no tab-list entry. Optional refill errors no longer block completion cleanup.
+Run `pp status` to see the configured base, enable flags, visible pearls, visible players with PearlPlus base access, and settled/eligible candidates. `pp base Crewbase` and `pp allow Player Crewbase` must use the same base name. No Zenith login whitelist entry is required. Version 1.1.13 preserves base grants when replacing assignments and uses cached allow-list names when a visible player has no tab-list entry. Optional refill errors no longer block completion cleanup.
 
 Version 1.1.10 added per-player registration blockers to `pp status`: ambiguous chambers, existing loader conflicts, missing saved loaders, capacity limits, busy loading, and registration exceptions. Candidate counts mean the scan passed, not that assignments were saved. Existing loader conflicts remain protected from automatic overwrites.
 
-Version 1.1.12 pins the first assignment and recovers unclaimed automatic loaders at the detected spot. Existing assigned spots take priority over later pearls. No pearl-refill or chat commands changed.
+Version 1.1.13 pins the first assignment and recovers unclaimed automatic loaders at the detected spot. Existing assigned spots take priority over later pearls. No pearl-refill or chat commands changed.
 
-### Outgoing messages (1.1.12)
+### Outgoing messages (1.1.13)
 
 All PearlPlus setup, refill and pull messages share a queue with at least three seconds between submissions. Redundant loading/completion replies were removed. The refill reply window starts when the prompt is submitted. `pp delay` still controls the minimum wait before the public announcement; other queued messages can delay it further. Public-request templates must include `{player}` or fall back to the named default. Whisper pulls announce exactly `Member of Divinity have been pulled`.
 
 `pp status` and console `[Pearl+ chat]` lines show the last message submitted, or a local send failure. Submission is not confirmation that the Minecraft server delivered it: server mute, chat restrictions and spam filters still apply. No automatic retries or random message suffixes are added.
+
+## Refill and donation controls (1.1.13)
+
+Owner commands: `pp refill on`, `pp refill off`, `pp refill reset`, and `pp stock`.
+The refill switch is saved independently on each bot/base and defaults to on. Off cancels offers, queued refill whispers, and unexecuted drops; pearl loading and public announcements continue.
+
+At zero pearls, a successful pull requests a donation privately instead of offering a spare pearl. A no reply requests a donation when fewer than five remain; a yes reply also requests one if stock is empty (including after dispensing the last pearl). The exact request is `Im low on pearl can you drop me some.` Each player's UUID is asked only once, saved across restarts and on/off toggles. `pp refill reset` clears that history and pending refill interactions. No proximity check is added. `pp stock` counts individual pearls in main inventory, hotbar and offhand, and shows enabled state and the number of players already asked. Offline stock is unavailable.

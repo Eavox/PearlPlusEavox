@@ -42,6 +42,17 @@ public class AutoLoadModule extends Module {
     private final OutgoingChat chat = new OutgoingChat();
     private final PearlRefill refill = new PearlRefill(chat);
 
+    public void setRefill(boolean enabled) {
+        synchronized (stateLock) { PLUGIN_CONFIG.refill.enabled = enabled; refill.clear(); }
+    }
+    public void resetDonationHistory() {
+        synchronized (stateLock) { refill.clear(); PLUGIN_CONFIG.refill.reset(); }
+    }
+    public String stockStatus() {
+        int count = refill.stock();
+        return "Pearls: " + (count < 0 ? "unavailable (offline/queue)" : count)
+            + "; refill: " + PLUGIN_CONFIG.refill.enabled + "; players already asked: " + PLUGIN_CONFIG.refill.count();
+    }
     public String chatStatus() { return chat.status(); }
     public void whisper(String name, String message) { chat.whisper(name, message); }
     private ScheduledThreadPoolExecutor scheduler;

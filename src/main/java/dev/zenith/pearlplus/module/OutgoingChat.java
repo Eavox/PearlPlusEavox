@@ -14,9 +14,12 @@ final class OutgoingChat {
     void whisper(String recipient, String text) { enqueue(recipient, text, () -> {}); }
     void publicMessage(String text) { enqueue(null, text, () -> {}); }
     void enqueue(String recipient, String text, Runnable onDispatch) {
+        enqueue(recipient, text, onDispatch, () -> true);
+    }
+    void enqueue(String recipient, String text, Runnable onDispatch, java.util.function.BooleanSupplier valid) {
         var proxy = Proxy.getInstance();
         if (!PLUGIN_CONFIG.autoLoad.enabled || !proxy.isConnected() || proxy.isInQueue()) return;
-        if (!queue.add(proxy.getClient(), recipient, text, onDispatch, System.nanoTime()))
+        if (!queue.add(proxy.getClient(), recipient, text, onDispatch, System.nanoTime(), valid))
             LOG.warn("Pearl+ outgoing message queue is full");
     }
     void tick() {
@@ -24,7 +27,7 @@ final class OutgoingChat {
         if (!PLUGIN_CONFIG.autoLoad.enabled || !proxy.isConnected() || proxy.isInQueue()) return;
         var client = proxy.getClient();
         var message = queue.poll(client, System.nanoTime());
-        if (message == null) return;
+        if (message == null || !message.valid().getAsBoolean()) return;
         try {
             String text = ChatUtil.sanitizeChatMessage(message.text());
             var packet = message.recipient() == null ? new ServerboundChatPacket(text)

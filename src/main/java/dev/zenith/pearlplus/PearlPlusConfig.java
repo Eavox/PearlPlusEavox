@@ -8,6 +8,20 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class PearlPlusConfig {
+    public final RefillConfig refill = new RefillConfig();
+    public static class RefillConfig {
+        public volatile boolean enabled = true;
+        public java.util.Set<UUID> asked = new java.util.HashSet<>();
+        public synchronized boolean hasAsked(UUID player) { return asked != null && asked.contains(player); }
+        public synchronized void markAsked(UUID player) {
+            if (asked == null) asked = new java.util.HashSet<>();
+            asked.add(player);
+        }
+        public synchronized void reset() { if (asked != null) asked.clear(); }
+        public synchronized int count() { return asked == null ? 0 : asked.size(); }
+        public static boolean shouldAsk(int stock, boolean declined) { return stock == 0 || (declined && stock > 0 && stock < 5); }
+    }
+
     public final AutoLoadConfig autoLoad = new AutoLoadConfig();
     public static class AutoLoadConfig {
         public volatile boolean enabled = true;

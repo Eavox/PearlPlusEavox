@@ -33,7 +33,7 @@ public class AutoLoadCommand extends Command {
             .description("Allow players to load assigned pearls through whispers or public chat.")
             .usageLines("<on/off>", "allow <playerName> <keyword> [pearlId]",
                 "deny <playerName/UUID> <keyword>", "list [page]", "strict <on/off>",
-                "status", "base [name]", "autodetect <on/off>", "delay <0-300 seconds>", "message <text>")
+                "stock", "refill <on/off/reset>", "status", "base [name]", "autodetect <on/off>", "delay <0-300 seconds>", "message <text>")
             .aliases("pp").build();
     }
 
@@ -48,6 +48,22 @@ public class AutoLoadCommand extends Command {
                 c.getSource().getEmbed().title("Pearl+ " + toggleStrCaps(enabled));
                 return OK;
             }))
+            .then(literal("stock").executes(c -> {
+                c.getSource().getEmbed().title("Pearl+ stock").description(MODULE.get(AutoLoadModule.class).stockStatus());
+                return OK;
+            }))
+            .then(literal("refill")
+                .then(literal("reset").executes(c -> {
+                    MODULE.get(AutoLoadModule.class).resetDonationHistory();
+                    c.getSource().getEmbed().title("Donation request history reset");
+                    return OK;
+                }))
+                .then(argument("toggle", toggle()).executes(c -> {
+                    boolean enabled = getToggle(c, "toggle");
+                    MODULE.get(AutoLoadModule.class).setRefill(enabled);
+                    c.getSource().getEmbed().title("Pearl+ refill " + toggleStrCaps(enabled));
+                    return OK;
+                })))
             .then(literal("status").executes(c -> {
                 c.getSource().getEmbed().title("Pearl+ detection status")
                     .description(MODULE.get(AutoDetectModule.class).status() + "\n" + MODULE.get(AutoLoadModule.class).chatStatus());
