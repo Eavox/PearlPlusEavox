@@ -1,4 +1,4 @@
-# PearlPlus 1.1.11
+# PearlPlus 1.1.12
 
 Allow selected players to activate registered ZenithProxy pearl loaders through whispers or public chat, without granting account-owner permissions.
 
@@ -12,12 +12,12 @@ On Linux, run these shell commands **from your ZenithProxy folder**:
 
 ```sh
 mkdir -p plugins
-curl -fL --retry 3 -o plugins/PearlPlus-1.1.11.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.11/PearlPlus-1.1.11.jar
+curl -fL --retry 3 -o plugins/PearlPlus-1.1.12.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.12/PearlPlus-1.1.12.jar
 ```
 
 Use Zenith's **Java release channel**. Run `plugins on` in the **Zenith console**, then restart Zenith and run `plugins list` to confirm PearlPlus loaded. Remove older PearlPlus JARs before restarting, but keep the config.
 
-Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.11.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
+Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.12.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
 
 Configuration remains in `plugins/config/pearl-plus.json`. Existing `allowed` UUID lists and `alias=target` entries are preserved. The new `playerNames` map caches display names; older entries show UUIDs until a name is learned from an authorized request or an allow command. Listing never requires a network lookup.
 
@@ -67,7 +67,7 @@ Public commands always allow trailing anti-spam text. The old `publicChatEnabled
 
 ## Spare pearl after a pull
 
-If the bot has ender pearls when Zenith reports a successful pull, it privately asks that player whether they need one to reset their pearl. Reply `/w <botName> yes` within 60 seconds to drop **one pearl** on the ground at the bot, or `/w <botName> no` to decline. Both finish with `stay safe !`. Public yes/no messages are ignored. Stand near the bot to collect the dropped pearl; it is not placed directly in your inventory.
+If the bot has ender pearls when Zenith reports a successful pull, it privately asks that player whether they need one to reset their pearl. Reply `/w <botName> yes` within 60 seconds to drop **one pearl** on the ground at the bot, or `/w <botName> no` to decline. After a drop, the bot whispers `I dropped 1 pearl on the ground for you. stay safe !`; declining replies `stay safe !`. Public yes/no messages are ignored. Stand near the bot to collect the dropped pearl; it is not placed directly in your inventory.
 
 Offers are single-use and tied to the requesting player. Disable, disconnect or permission revocation cancels them. If inventory is busy, a container is open, someone is controlling the bot, or no pearl remains, it sends a private failure message instead of claiming a drop. Drops use Zenith's inventory manager and recheck the item at execution.
 
@@ -77,7 +77,7 @@ Offers are single-use and tied to the requesting player. Disable, disconnect or 
 - Announcements begin only after Zenith reports its `Pearl Loaded!` callback. This reports the loader interaction, not independent proof that a player teleported.
 - `pp delay 7` waits seven seconds after that callback. The supported range is 0-300 seconds; values outside that range in existing JSON are clamped.
 - `pp message Pearl interaction completed for {player} at {time}` accepts spaces. Placeholders: `{player}`, `{pearl}`, `{time}` (proxy host local time). Messages are limited to 256 characters after expansion.
-- Whisper-triggered completion announces exactly `A Divinity Member have been pulled !` in public chat, without a name or pearl ID. Public-chat requests announce `{player} has been pulled !`.
+- Whisper-triggered completion announces exactly `Member of Divinity have been pulled` in public chat, without a name or pearl ID. Public-chat requests announce `{player} has been pulled !`.
 - `pp message` customizes only the public-request announcement. The old `publicChatSuccessMessage` setting is replaced by `publicPullMessage` so upgrades receive the new default. Whisper announcements stay anonymous.
 - Only one PearlPlus request, including its pending public announcement, is active at a time. There is a three-second global request cooldown. Busy/cooldown requests are silently ignored to avoid reply spam.
 - Requests expire after 120 seconds without a completion callback and log a timeout. Late callbacks from expired or cancelled requests are ignored.
@@ -120,14 +120,20 @@ To bound work and storage, detection skips scans with more than 256 visible pear
 
 Run `pp base Crewbase` after upgrading. Active automatically generated permissions such as `pearl1` are renamed to the base keyword when their chamber is observed again. A revoked permission is not restored. If multiple eligible legacy chambers for one player are visible, choose the intended target explicitly with `pp allow PlayerName crewbase <targetId>` from `pp list`.
 
-### Access changes in 1.1.11
+### Access changes in 1.1.12
 
 Automatic setup and loading use PearlPlus permissions only. Players do not need to be on Zenith's whitelist, and being on Zenith's whitelist alone grants no pearl access. Existing saved PearlPlus permissions remain valid. `pp deny PlayerName crewbase` (or UUID) removes pending base access and the assigned keyword together. To use manual two-argument grants from older versions, now supply the target explicitly: `pp allow PlayerName keyword targetId`.
 
 ### Detection troubleshooting
 
-Run `pp status` to see the configured base, enable flags, visible pearls, visible players with PearlPlus base access, and settled/eligible candidates. `pp base Crewbase` and `pp allow Player Crewbase` must use the same base name. No Zenith login whitelist entry is required. Version 1.1.11 preserves base grants when replacing assignments and uses cached allow-list names when a visible player has no tab-list entry. Optional refill errors no longer block completion cleanup.
+Run `pp status` to see the configured base, enable flags, visible pearls, visible players with PearlPlus base access, and settled/eligible candidates. `pp base Crewbase` and `pp allow Player Crewbase` must use the same base name. No Zenith login whitelist entry is required. Version 1.1.12 preserves base grants when replacing assignments and uses cached allow-list names when a visible player has no tab-list entry. Optional refill errors no longer block completion cleanup.
 
 Version 1.1.10 added per-player registration blockers to `pp status`: ambiguous chambers, existing loader conflicts, missing saved loaders, capacity limits, busy loading, and registration exceptions. Candidate counts mean the scan passed, not that assignments were saved. Existing loader conflicts remain protected from automatic overwrites.
 
-Version 1.1.11 pins the first assignment and recovers unclaimed automatic loaders at the detected spot. Existing assigned spots take priority over later pearls. No pearl-refill or chat commands changed.
+Version 1.1.12 pins the first assignment and recovers unclaimed automatic loaders at the detected spot. Existing assigned spots take priority over later pearls. No pearl-refill or chat commands changed.
+
+### Outgoing messages (1.1.12)
+
+All PearlPlus setup, refill and pull messages share a queue with at least three seconds between submissions. Redundant loading/completion replies were removed. The refill reply window starts when the prompt is submitted. `pp delay` still controls the minimum wait before the public announcement; other queued messages can delay it further. Public-request templates must include `{player}` or fall back to the named default. Whisper pulls announce exactly `Member of Divinity have been pulled`.
+
+`pp status` and console `[Pearl+ chat]` lines show the last message submitted, or a local send failure. Submission is not confirmation that the Minecraft server delivered it: server mute, chat restrictions and spam filters still apply. No automatic retries or random message suffixes are added.

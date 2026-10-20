@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PearlPlusTest {
     @Test void whisperCompletionNeverExposesIdentityInPublicAnnouncement() {
-        assertEquals("A Divinity Member have been pulled !",
+        assertEquals("Member of Divinity have been pulled",
             PullAnnouncement.format(false, "{player} {pearl} {time}", "SecretPlayer", "SecretBase", "12:00"));
     }
 

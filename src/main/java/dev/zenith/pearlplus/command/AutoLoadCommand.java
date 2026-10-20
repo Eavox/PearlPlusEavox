@@ -50,7 +50,7 @@ public class AutoLoadCommand extends Command {
             }))
             .then(literal("status").executes(c -> {
                 c.getSource().getEmbed().title("Pearl+ detection status")
-                    .description(MODULE.get(AutoDetectModule.class).status());
+                    .description(MODULE.get(AutoDetectModule.class).status() + "\n" + MODULE.get(AutoLoadModule.class).chatStatus());
                 return OK;
             }))
             .then(literal("allow").then(argument("playerName", wordWithChars())

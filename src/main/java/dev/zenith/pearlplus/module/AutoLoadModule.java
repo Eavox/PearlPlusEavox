@@ -8,7 +8,7 @@ import com.zenith.discord.Embed;
 import com.zenith.event.chat.WhisperChatEvent;
 import com.zenith.event.chat.PublicChatEvent;
 import com.zenith.event.client.ClientDisconnectEvent;
-import com.zenith.event.client.ClientBotTick;
+import com.zenith.event.client.ClientTickEvent;
 import java.util.UUID;
 import com.zenith.module.api.Module;
 import com.zenith.util.ChatUtil;
@@ -39,7 +39,11 @@ public class AutoLoadModule extends Module {
     private static final long COOLDOWN_NANOS = TimeUnit.SECONDS.toNanos(3);
     private final Object stateLock = new Object();
     private final RequestTracker requests = new RequestTracker();
-    private final PearlRefill refill = new PearlRefill();
+    private final OutgoingChat chat = new OutgoingChat();
+    private final PearlRefill refill = new PearlRefill(chat);
+
+    public String chatStatus() { return chat.status(); }
+    public void whisper(String name, String message) { chat.whisper(name, message); }
     private ScheduledThreadPoolExecutor scheduler;
     private ScheduledFuture<?> timeout;
     private ScheduledFuture<?> announcement;
@@ -76,6 +80,7 @@ public class AutoLoadModule extends Module {
         synchronized (stateLock) {
             requests.cancel();
             refill.clear();
+            chat.clear();
             if (timeout != null) timeout.cancel(false);
             if (announcement != null) announcement.cancel(false);
             timeout = null;
@@ -95,7 +100,9 @@ public class AutoLoadModule extends Module {
     public List<EventConsumer<?>> registerEvents() {
         return List.of(of(WhisperChatEvent.class, this::onWhisper),
             of(PublicChatEvent.class, this::onPublicChat),
-            of(ClientBotTick.class, event -> refill.tick()),
+            of(ClientTickEvent.class, event -> {
+                synchronized (stateLock) { refill.tick(); chat.tick(); }
+            }),
             of(ClientDisconnectEvent.class, event -> cancelPendingRequests()));
     }
 
@@ -166,11 +173,8 @@ public class AutoLoadModule extends Module {
                 String response = result.isTitlePresent() ? result.title() : "Pearl load was not accepted";
                 if (!accepted) cancelPendingRequests();
                 discordAndIngameNotification(result.isTitlePresent() ? result : Embed.builder().title(response).errorColor());
-                if (publicChat) {
-                    sendPublicMessage(name + ": " + (accepted ? "loading your pearl" : response));
-                } else {
-                    sendClientPacketAsync(ChatUtil.getWhisperChatPacket(name, ChatUtil.sanitizeChatMessage(response)));
-                }
+                if (!accepted) chat.whisper(name, response);
+
             } catch (Exception e) {
                 cancelPendingRequests();
                 error("Pearl load request failed", e);
@@ -195,9 +199,6 @@ public class AutoLoadModule extends Module {
             timeout = null;
             discordAndIngameNotification(Embed.builder().title("Pearl interaction completed")
                 .addField("Player", name).addField("Pearl", pearl.alias()).successColor());
-            if (!publicChat) {
-                sendClientPacketAsync(ChatUtil.getWhisperChatPacket(name, "Pearl interaction completed: " + pearl.alias()));
-            }
             try {
                 refill.offer(player, name, pearl.alias(), session);
             } catch (Exception e) {
@@ -223,10 +224,6 @@ public class AutoLoadModule extends Module {
     }
 
     private void sendPublicMessage(String message) {
-        if (message == null || message.isBlank() || !Proxy.getInstance().isConnected()) return;
-        String sanitized = ChatUtil.sanitizeChatMessage(message);
-        if (sanitized.length() > 256) sanitized = sanitized.substring(0, 256);
-        if (!sanitized.isBlank()) sendClientPacketAsync(new ServerboundChatPacket(sanitized));
+        chat.publicMessage(message);
     }
-
 }

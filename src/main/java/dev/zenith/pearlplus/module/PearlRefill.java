@@ -24,6 +24,8 @@ import static dev.zenith.pearlplus.PearlPlusPlugin.PLUGIN_CONFIG;
 
 /** Inventory actions are checked again at execution, never against a stale slot. */
 final class PearlRefill {
+    private final OutgoingChat chat;
+    PearlRefill(OutgoingChat chat) { this.chat = chat; }
     private final RefillOffers offers = new RefillOffers();
     private final AtomicLong generation = new AtomicLong();
     private final ConcurrentLinkedQueue<Delivery> deliveries = new ConcurrentLinkedQueue<>();
@@ -39,8 +41,8 @@ final class PearlRefill {
 
     void offer(UUID player, String name, String alias, Object session) {
         if (!live(session) || pearlSlot() < 0) return;
-        if (!offers.add(player, name, alias, session, System.nanoTime())) return;
-        whisper(name, "Do you need a pearl to reset your pearl? Whisper yes or no within 60 seconds.");
+        chat.enqueue(name, "Do you need a pearl to reset your pearl? Whisper yes or no within 60 seconds.",
+            () -> { if (live(session)) offers.add(player, name, alias, session, System.nanoTime()); });
     }
 
     void reply(UUID player, String message) {
@@ -81,7 +83,7 @@ final class PearlRefill {
             if (delivery.generation() != generation.get() || !live(delivery.session())) continue;
             // Zenith also completes skipped inventory actions: require a real drop packet.
             boolean dropped = delivery.future().getNow() && delivery.packetCreated().get();
-            whisper(delivery.name(), dropped ? "stay safe !" : "I could not drop a pearl right now. stay safe !");
+            whisper(delivery.name(), dropped ? "I dropped 1 pearl on the ground for you. stay safe !" : "I could not drop a pearl right now. stay safe !");
         }
     }
 
@@ -98,6 +100,6 @@ final class PearlRefill {
         return item.getId() == ItemRegistry.ENDER_PEARL.id();
     }
     private void whisper(String name, String message) {
-        Proxy.getInstance().getClient().sendAsync(ChatUtil.getWhisperChatPacket(name, message));
+        chat.whisper(name, message);
     }
 }

@@ -182,8 +182,8 @@ public class AutoDetectModule extends Module {
             config.autoDetect.remember(target, new AutoPearl(owner.uuid(), alias, scope, pos.x(), pos.y(), pos.z()));
             info("Automatically registered {} for {}", alias, owner.name());
             try {
-                sendClientPacketAsync(ChatUtil.getWhisperChatPacket(owner.name(),
-                    "Pearl saved as " + alias + ". Say load " + alias + " in chat or whisper it to me."));
+                MODULE.get(AutoLoadModule.class).whisper(owner.name(),
+                    "Pearl saved as " + alias + ". Say load " + alias + " in chat or whisper it to me.");
             } catch (Exception e) {
                 warn("Pearl registered, but setup whisper could not be sent: {}", e.getMessage());
             }
