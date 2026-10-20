@@ -6,12 +6,13 @@ import com.zenith.plugin.api.ZenithProxyPlugin;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import dev.zenith.pearlplus.command.AutoLoadCommand;
 import dev.zenith.pearlplus.module.AutoLoadModule;
+import dev.zenith.pearlplus.module.AutoDetectModule;
 
 @Plugin(
     id = "pearl-plus",
     version = BuildConstants.VERSION,
-    description = "Load pearls through whispers without whitelist.",
-    url = "https://github.com/duccss/",
+    description = "Automatic pearl setup and loading through public chat or whispers.",
+    url = "https://github.com/Eavox/PearlPlusEavox",
     authors = {"duccss"},
     mcVersions = {"1.21.4"}
 )
@@ -29,7 +30,7 @@ public class PearlPlusPlugin implements ZenithProxyPlugin {
         PLUGIN_CONFIG = API.registerConfig("pearl-plus", PearlPlusConfig.class);
         API.registerCommand(new AutoLoadCommand());
         API.registerModule(new AutoLoadModule());
+        API.registerModule(new AutoDetectModule());
         LOG.info("Pearl+ Plugin loaded!");
     }
 }
-

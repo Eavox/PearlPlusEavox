@@ -5,15 +5,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PearlPlusConfig {
     public final AutoLoadConfig autoLoad = new AutoLoadConfig();
     public static class AutoLoadConfig {
         public volatile boolean enabled = true;
         public volatile boolean allowNoiseAfterPearl = false;
-        public volatile boolean publicChatEnabled = false;
         public volatile int publicChatDelaySeconds = 7;
-        public volatile String publicChatSuccessMessage = "Pearl interaction completed for {player}";
+        public volatile String publicPullMessage = "{player} has been pulled !";
         public Map<UUID, List<String>> allowed = new LinkedHashMap<>();
         public Map<UUID, String> playerNames = new LinkedHashMap<>();
 
@@ -69,5 +69,22 @@ public class PearlPlusConfig {
     }
 
     public final AutoDetectConfig autoDetect = new AutoDetectConfig();
-    public static final class AutoDetectConfig { }
+    public static final class AutoDetectConfig {
+        public volatile boolean enabled = true;
+        // Remember registered chambers so restart/rethrow cannot undo an owner's pp deny.
+        public Map<String, AutoPearl> registered = new ConcurrentHashMap<>();
+
+        public synchronized AutoPearl get(String target) {
+            return registered == null ? null : registered.get(target);
+        }
+
+        public synchronized int size() { return registered == null ? 0 : registered.size(); }
+
+        public synchronized void remember(String target, AutoPearl pearl) {
+            if (registered == null) registered = new ConcurrentHashMap<>();
+            registered.put(target, pearl);
+        }
+    }
+
+    public record AutoPearl(UUID owner, String alias, String scope, int x, int y, int z) {}
 }

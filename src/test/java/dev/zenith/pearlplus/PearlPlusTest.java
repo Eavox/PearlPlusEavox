@@ -7,6 +7,21 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PearlPlusTest {
+    @Test void whisperCompletionNeverExposesIdentityInPublicAnnouncement() {
+        assertEquals("A Divinity Member have been pulled !",
+            PullAnnouncement.format(false, "{player} {pearl} {time}", "SecretPlayer", "SecretBase", "12:00"));
+    }
+
+    @Test void publicCompletionNamesTheRequestingPlayer() {
+        assertEquals("Alex has been pulled !",
+            PullAnnouncement.format(true, null, "Alex", "Spawn", "12:00"));
+    }
+
+    @Test void publicAnnouncementCanStillBeCustomized() {
+        assertEquals("Alex pulled from Spawn at 12:00",
+            PullAnnouncement.format(true, "{player} pulled from {pearl} at {time}", "Alex", "Spawn", "12:00"));
+    }
+
     @Test void legacyEntryStillWorks() {
         assertEquals(new PearlEntry("Spawn", "Spawn"), PearlEntry.parse(" Spawn ").orElseThrow());
         assertEquals(new PearlEntry("Spawn", "Spawn"), PearlEntry.parse("Spawn=").orElseThrow());

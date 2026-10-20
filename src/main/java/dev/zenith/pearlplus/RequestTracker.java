@@ -21,6 +21,10 @@ public final class RequestTracker {
         return token != 0 && active == token;
     }
 
+    public boolean isBusy() {
+        return active != 0;
+    }
+
     public boolean complete(long token) {
         if (!isCurrent(token) || completed) return false;
         completed = true;

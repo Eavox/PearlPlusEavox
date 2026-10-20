@@ -11,8 +11,11 @@ import com.zenith.event.client.ClientDisconnectEvent;
 import com.zenith.module.api.Module;
 import com.zenith.util.ChatUtil;
 import dev.zenith.pearlplus.LoadInput;
+import dev.zenith.pearlplus.PullAnnouncement;
 import dev.zenith.pearlplus.PearlEntry;
 import dev.zenith.pearlplus.RequestTracker;
+import dev.zenith.pearlplus.AutoPearlAccess;
+import com.zenith.feature.player.World;
 import org.geysermc.mcprotocollib.protocol.data.game.PlayerListEntry;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatPacket;
 
@@ -22,9 +25,12 @@ import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 import static com.github.rfresh2.EventConsumer.of;
 import static com.zenith.Globals.COMMAND;
+import static com.zenith.Globals.CONFIG;
+import static com.zenith.Globals.PLAYER_LISTS;
 import static dev.zenith.pearlplus.PearlPlusPlugin.PLUGIN_CONFIG;
 
 public class AutoLoadModule extends Module {
@@ -74,6 +80,14 @@ public class AutoLoadModule extends Module {
         }
     }
 
+    /** Do not mutate loader registrations while one of our requests is running. */
+    public boolean registerWhenIdle(BooleanSupplier registration) {
+        synchronized (stateLock) {
+            if (scheduler == null || !PLUGIN_CONFIG.autoLoad.enabled || requests.isBusy()) return false;
+            return registration.getAsBoolean();
+        }
+    }
+
     @Override
     public List<EventConsumer<?>> registerEvents() {
         return List.of(of(WhisperChatEvent.class, this::onWhisper),
@@ -92,19 +106,29 @@ public class AutoLoadModule extends Module {
 
     private void processLoadCommand(PlayerListEntry sender, String message, boolean publicChat) {
         var config = PLUGIN_CONFIG.autoLoad;
-        if (!config.enabled || config.publicChatEnabled != publicChat || sender == null
+        if (!config.enabled || sender == null
             || sender.getProfileId() == null || sender.getName() == null) return;
         var input = LoadInput.parse(message, publicChat || config.allowNoiseAfterPearl);
         if (input.isEmpty()) return;
         String name = sender.getName();
         synchronized (stateLock) {
-            if (scheduler == null || scheduler.isShutdown() || !config.enabled
-                || config.publicChatEnabled != publicChat) return;
+            if (scheduler == null || scheduler.isShutdown() || !config.enabled) return;
             var selected = input.get().select(config.entries(sender.getProfileId()));
             if (selected.isEmpty()) return; // unassigned users cannot produce log or chat spam
             PearlEntry pearl = selected.get();
             var proxy = Proxy.getInstance();
             if (!proxy.isConnected() || proxy.isInQueue()) return;
+            var automatic = PLUGIN_CONFIG.autoDetect.get(pearl.target());
+            if (!AutoPearlAccess.mayLoad(automatic, sender.getProfileId(), AutoDetectModule.currentScope(),
+                PLAYER_LISTS.getWhitelist().contains(sender.getProfileId()))) return;
+            if (automatic != null) {
+                // A changed/missing trapdoor or edited built-in loader must not redirect an auto registration.
+                if (!World.isChunkLoadedBlockPos(automatic.x(), automatic.z())
+                    || !World.getBlock(automatic.x(), automatic.y(), automatic.z()).name().endsWith("_trapdoor")
+                    || World.getBlock(automatic.x(), automatic.y(), automatic.z()).name().endsWith("iron_trapdoor")
+                    || CONFIG.client.extra.pearlLoader.pearls.stream().noneMatch(p -> p.id().equals(pearl.target())
+                        && p.x() == automatic.x() && p.y() == automatic.y() && p.z() == automatic.z())) return;
+            }
             long token = requests.begin(System.nanoTime(), COOLDOWN_NANOS);
             if (token == 0) return; // one physical loader operation/announcement at a time
             Object session = proxy.getClient();
@@ -151,7 +175,7 @@ public class AutoLoadModule extends Module {
     private boolean live(long token, Object session, boolean publicChat) {
         var proxy = Proxy.getInstance();
         return requests.isCurrent(token) && scheduler != null && !scheduler.isShutdown()
-            && PLUGIN_CONFIG.autoLoad.enabled && PLUGIN_CONFIG.autoLoad.publicChatEnabled == publicChat
+            && PLUGIN_CONFIG.autoLoad.enabled
             && proxy.isConnected() && !proxy.isInQueue() && proxy.getClient() == session;
     }
 
@@ -167,15 +191,14 @@ public class AutoLoadModule extends Module {
                 .addField("Player", name).addField("Pearl", pearl.alias()).successColor());
             if (!publicChat) {
                 sendClientPacketAsync(ChatUtil.getWhisperChatPacket(name, "Pearl interaction completed: " + pearl.alias()));
-                requests.release(token);
-                return;
             }
             int delay = Math.clamp(PLUGIN_CONFIG.autoLoad.publicChatDelaySeconds, 0, 300);
-            String template = PLUGIN_CONFIG.autoLoad.publicChatSuccessMessage;
+            String template = PLUGIN_CONFIG.autoLoad.publicPullMessage;
             announcement = scheduler.schedule(() -> {
                 synchronized (stateLock) {
                     try {
-                        if (live(token, session, true)) sendPublicMessage(replacePlaceholders(template, name, pearl.alias()));
+                        if (live(token, session, publicChat)) sendPublicMessage(PullAnnouncement.format(
+                            publicChat, template, name, pearl.alias(), LocalTime.now().format(TIME_FORMAT)));
                     } catch (Exception e) {
                         error("Pearl completion announcement failed", e);
                     } finally {
@@ -194,9 +217,4 @@ public class AutoLoadModule extends Module {
         if (!sanitized.isBlank()) sendClientPacketAsync(new ServerboundChatPacket(sanitized));
     }
 
-    private String replacePlaceholders(String template, String playerName, String pearlName) {
-        if (template == null) template = "Pearl interaction completed for {player}";
-        return template.replace("{player}", playerName).replace("{pearl}", pearlName)
-            .replace("{time}", LocalTime.now().format(TIME_FORMAT));
-    }
 }

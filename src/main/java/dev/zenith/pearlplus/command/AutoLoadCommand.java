@@ -9,6 +9,7 @@ import com.zenith.feature.api.ProfileData;
 import com.zenith.feature.whitelist.PlayerListsManager;
 import dev.zenith.pearlplus.PearlEntry;
 import dev.zenith.pearlplus.module.AutoLoadModule;
+import dev.zenith.pearlplus.module.AutoDetectModule;
 
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -31,7 +32,7 @@ public class AutoLoadCommand extends Command {
             .description("Allow players to load assigned pearls through whispers or public chat.")
             .usageLines("<on/off>", "allow <playerName> <keyword> [pearlId]",
                 "deny <playerName/UUID> <keyword>", "list [page]", "strict <on/off>",
-                "publicchat <on/off>", "delay <0-300 seconds>", "message <text>")
+                "autodetect <on/off>", "delay <0-300 seconds>", "message <text>")
             .aliases("pp").build();
     }
 
@@ -42,6 +43,7 @@ public class AutoLoadCommand extends Command {
                 boolean enabled = getToggle(c, "toggle");
                 PLUGIN_CONFIG.autoLoad.enabled = enabled;
                 MODULE.get(AutoLoadModule.class).syncEnabledFromConfig();
+                MODULE.get(AutoDetectModule.class).syncEnabledFromConfig();
                 c.getSource().getEmbed().title("Pearl+ " + toggleStrCaps(enabled));
                 return OK;
             }))
@@ -80,10 +82,10 @@ public class AutoLoadCommand extends Command {
                 c.getSource().getEmbed().title("Pearl+ strict " + toggleStrCaps(strict));
                 return OK;
             })))
-            .then(literal("publicchat").then(argument("toggle", toggle()).executes(c -> {
-                PLUGIN_CONFIG.autoLoad.publicChatEnabled = getToggle(c, "toggle");
-                MODULE.get(AutoLoadModule.class).cancelPendingRequests();
-                c.getSource().getEmbed().title("Pearl+ public chat " + toggleStrCaps(PLUGIN_CONFIG.autoLoad.publicChatEnabled));
+            .then(literal("autodetect").then(argument("toggle", toggle()).executes(c -> {
+                PLUGIN_CONFIG.autoDetect.enabled = getToggle(c, "toggle");
+                MODULE.get(AutoDetectModule.class).syncEnabledFromConfig();
+                c.getSource().getEmbed().title("Pearl+ auto-detection " + toggleStrCaps(PLUGIN_CONFIG.autoDetect.enabled));
                 return OK;
             })))
             .then(literal("delay").then(argument("seconds", integer(0, 300)).executes(c -> {
@@ -98,8 +100,8 @@ public class AutoLoadCommand extends Command {
                     c.getSource().getEmbed().title("Message must contain 1-256 characters without control characters");
                     return ERROR;
                 }
-                PLUGIN_CONFIG.autoLoad.publicChatSuccessMessage = text;
-                c.getSource().getEmbed().title("Pearl+ announcement updated")
+                PLUGIN_CONFIG.autoLoad.publicPullMessage = text;
+                c.getSource().getEmbed().title("Pearl+ public-request announcement updated")
                     .description(text + "\nPlaceholders: {player}, {pearl}, {time}");
                 return OK;
             })));
