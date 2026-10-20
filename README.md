@@ -1,4 +1,4 @@
-# PearlPlus 1.1.7
+# PearlPlus 1.1.8
 
 Allow selected players to activate registered ZenithProxy pearl loaders through whispers or public chat, without granting account-owner permissions.
 
@@ -12,12 +12,12 @@ On Linux, run these shell commands **from your ZenithProxy folder**:
 
 ```sh
 mkdir -p plugins
-curl -fL --retry 3 -o plugins/PearlPlus-1.1.7.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.7/PearlPlus-1.1.7.jar
+curl -fL --retry 3 -o plugins/PearlPlus-1.1.8.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.8/PearlPlus-1.1.8.jar
 ```
 
 Use Zenith's **Java release channel**. Run `plugins on` in the **Zenith console**, then restart Zenith and run `plugins list` to confirm PearlPlus loaded. Remove older PearlPlus JARs before restarting, but keep the config.
 
-Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.7.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
+Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.8.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
 
 Configuration remains in `plugins/config/pearl-plus.json`. Existing `allowed` UUID lists and `alias=target` entries are preserved. The new `playerNames` map caches display names; older entries show UUIDs until a name is learned from an authorized request or an allow command. Listing never requires a network lookup.
 
@@ -63,6 +63,12 @@ load Spawn randomText
 ```
 
 Public commands always allow trailing anti-spam text. The old `publicChatEnabled` setting is ignored, and the `pp publicchat` mode switch has been removed. No prefix is required: type `load Spawn` directly. The old `publicChatAffix` setting is ignored, so existing installations need no config edit. Prefixed commands such as `!load Spawn` are no longer accepted.
+
+## Spare pearl after a pull
+
+If the bot has ender pearls when Zenith reports a successful pull, it privately asks that player whether they need one to reset their pearl. Reply `/w <botName> yes` within 60 seconds to drop **one pearl** on the ground at the bot, or `/w <botName> no` to decline. Both finish with `stay safe !`. Public yes/no messages are ignored. Stand near the bot to collect the dropped pearl; it is not placed directly in your inventory.
+
+Offers are single-use and tied to the requesting player. Disable, disconnect or permission revocation cancels them. If inventory is busy, a container is open, someone is controlling the bot, or no pearl remains, it sends a private failure message instead of claiming a drop. Drops use Zenith's inventory manager and recheck the item at execution.
 
 ## Completion and request limits
 
@@ -113,6 +119,6 @@ To bound work and storage, detection skips scans with more than 256 visible pear
 
 Run `pp base Crewbase` after upgrading. Active automatically generated permissions such as `pearl1` are renamed to the base keyword when their chamber is observed again. A revoked permission is not restored. If multiple eligible legacy chambers for one player are visible, choose the intended target explicitly with `pp allow PlayerName crewbase <targetId>` from `pp list`.
 
-### Access changes in 1.1.7
+### Access changes in 1.1.8
 
 Automatic setup and loading use PearlPlus permissions only. Players do not need to be on Zenith's whitelist, and being on Zenith's whitelist alone grants no pearl access. Existing saved PearlPlus permissions remain valid. `pp deny PlayerName crewbase` (or UUID) removes pending base access and the assigned keyword together. To use manual two-argument grants from older versions, now supply the target explicitly: `pp allow PlayerName keyword targetId`.

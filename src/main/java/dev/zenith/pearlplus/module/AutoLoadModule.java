@@ -8,6 +8,8 @@ import com.zenith.discord.Embed;
 import com.zenith.event.chat.WhisperChatEvent;
 import com.zenith.event.chat.PublicChatEvent;
 import com.zenith.event.client.ClientDisconnectEvent;
+import com.zenith.event.client.ClientBotTick;
+import java.util.UUID;
 import com.zenith.module.api.Module;
 import com.zenith.util.ChatUtil;
 import dev.zenith.pearlplus.LoadInput;
@@ -37,6 +39,7 @@ public class AutoLoadModule extends Module {
     private static final long COOLDOWN_NANOS = TimeUnit.SECONDS.toNanos(3);
     private final Object stateLock = new Object();
     private final RequestTracker requests = new RequestTracker();
+    private final PearlRefill refill = new PearlRefill();
     private ScheduledThreadPoolExecutor scheduler;
     private ScheduledFuture<?> timeout;
     private ScheduledFuture<?> announcement;
@@ -72,6 +75,7 @@ public class AutoLoadModule extends Module {
     public void cancelPendingRequests() {
         synchronized (stateLock) {
             requests.cancel();
+            refill.clear();
             if (timeout != null) timeout.cancel(false);
             if (announcement != null) announcement.cancel(false);
             timeout = null;
@@ -91,11 +95,14 @@ public class AutoLoadModule extends Module {
     public List<EventConsumer<?>> registerEvents() {
         return List.of(of(WhisperChatEvent.class, this::onWhisper),
             of(PublicChatEvent.class, this::onPublicChat),
+            of(ClientBotTick.class, event -> refill.tick()),
             of(ClientDisconnectEvent.class, event -> cancelPendingRequests()));
     }
 
     private void onWhisper(WhisperChatEvent event) {
         if (event.outgoing()) return;
+        if (event.sender() != null && event.sender().getProfileId() != null)
+            refill.reply(event.sender().getProfileId(), event.message());
         processLoadCommand(event.sender(), event.message(), false);
     }
 
@@ -147,7 +154,7 @@ public class AutoLoadModule extends Module {
                     @Override public String name() { return "Pearl+"; }
                     @Override public boolean validateAccountOwner(CommandContext ctx) { return false; }
                     @Override public void logEmbed(CommandContext ctx, Embed embed) {
-                        onLoaderCallback(token, session, name, pearl, publicChat, embed);
+                        onLoaderCallback(token, session, sender.getProfileId(), name, pearl, publicChat, embed);
                     }
                 };
                 var context = CommandContext.create("pl load " + pearl.target(), source);
@@ -178,7 +185,7 @@ public class AutoLoadModule extends Module {
             && proxy.isConnected() && !proxy.isInQueue() && proxy.getClient() == session;
     }
 
-    private void onLoaderCallback(long token, Object session, String name, PearlEntry pearl,
+    private void onLoaderCallback(long token, Object session, UUID player, String name, PearlEntry pearl,
                                   boolean publicChat, Embed embed) {
         synchronized (stateLock) {
             // The later "Returned to start pos" callback is deliberately not a second completion.
@@ -191,6 +198,7 @@ public class AutoLoadModule extends Module {
             if (!publicChat) {
                 sendClientPacketAsync(ChatUtil.getWhisperChatPacket(name, "Pearl interaction completed: " + pearl.alias()));
             }
+            refill.offer(player, name, pearl.alias(), session);
             int delay = Math.clamp(PLUGIN_CONFIG.autoLoad.publicChatDelaySeconds, 0, 300);
             String template = PLUGIN_CONFIG.autoLoad.publicPullMessage;
             announcement = scheduler.schedule(() -> {
