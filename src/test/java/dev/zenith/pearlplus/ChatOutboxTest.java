@@ -29,7 +29,7 @@ class ChatOutboxTest {
         assertNull(queue.poll(session, 120_000_000_000L));
     }
     @Test void queueIsBounded() {
-        for (int i=0;i<64;i++) add(null, "message", 0);
+        for (int i=0;i<ChatOutbox.CAPACITY;i++) add(null, "message", 0);
         assertFalse(queue.add(session, null, "overflow", () -> {}, 0));
     }
     @Test void offerTimeoutStartsWhenPromptIsDispatchedNotWhenQueued() {

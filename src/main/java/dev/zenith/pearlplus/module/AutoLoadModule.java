@@ -39,8 +39,11 @@ public class AutoLoadModule extends Module {
     private static final long COOLDOWN_NANOS = TimeUnit.SECONDS.toNanos(3);
     private final Object stateLock = new Object();
     private final RequestTracker requests = new RequestTracker();
+    private final dev.zenith.pearlplus.InteractionScope scopes = new dev.zenith.pearlplus.InteractionScope();
+    private UUID activePlayer;
+    private String activeBase;
     private final OutgoingChat chat = new OutgoingChat();
-    private final PearlRefill refill = new PearlRefill(chat);
+    private final PearlRefill refill = new PearlRefill(chat, scopes);
 
     public void setRefill(boolean enabled) {
         synchronized (stateLock) { PLUGIN_CONFIG.refill.enabled = enabled; refill.clear(); }
@@ -54,10 +57,46 @@ public class AutoLoadModule extends Module {
             + "; refill: " + PLUGIN_CONFIG.refill.enabled + "; players already asked: " + PLUGIN_CONFIG.refill.count();
     }
     public String chatStatus() { return chat.status(); }
-    public void whisper(String name, String message) { chat.whisper(name, message); }
+    public void whisper(UUID player, String base, String name, String message) {
+        chat.enqueue(name, message, () -> {}, scopes.token(player, base));
+    }
+    public void cancelPlayer(UUID player, String base) {
+        synchronized (stateLock) {
+            scopes.cancel(player, base);
+            refill.cancel(player, base);
+            if (player.equals(activePlayer) && base.equalsIgnoreCase(activeBase)) cancelActiveRequest();
+        }
+    }
+    private void cancelActiveRequest() {
+        requests.cancel();
+        activePlayer = null; activeBase = null;
+        if (timeout != null) timeout.cancel(false);
+        if (announcement != null) announcement.cancel(false);
+        timeout = null; announcement = null;
+    }
     private ScheduledThreadPoolExecutor scheduler;
     private ScheduledFuture<?> timeout;
     private ScheduledFuture<?> announcement;
+
+    @Override public com.zenith.network.codec.PacketHandlerCodec registerClientPacketHandlerCodec() {
+        return com.zenith.network.codec.PacketHandlerCodec.clientBuilder().setId("pearlplus-inventory-receipts").setPriority(-5)
+            .state(org.geysermc.mcprotocollib.protocol.data.ProtocolState.GAME,
+                com.zenith.network.codec.PacketHandlerStateCodec.clientBuilder()
+                    .inbound(org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetSlotPacket.class,
+                        new com.zenith.network.codec.ClientEventLoopPacketHandler<org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetSlotPacket, com.zenith.network.client.ClientSession>() {
+                            @Override public boolean applyAsync(org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetSlotPacket packet, com.zenith.network.client.ClientSession session) {
+                                refill.serverSlot(packet.getContainerId(),packet.getSlot(),packet.getItem(),session); return true;
+                            }
+                        })
+                    .inbound(org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetContentPacket.class,
+                        new com.zenith.network.codec.ClientEventLoopPacketHandler<org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetContentPacket, com.zenith.network.client.ClientSession>() {
+                            @Override public boolean applyAsync(org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetContentPacket packet, com.zenith.network.client.ClientSession session) {
+                                var items=packet.getItems();
+                                for(int slot=0;slot<items.length;slot++) refill.serverSlot(packet.getContainerId(),slot,items[slot],session);
+                                return true;
+                            }
+                        }).build()).build();
+    }
 
     @Override
     public boolean enabledSetting() {
@@ -89,13 +128,10 @@ public class AutoLoadModule extends Module {
     /** Invalidates late callbacks as well as scheduled messages; never waits for a worker. */
     public void cancelPendingRequests() {
         synchronized (stateLock) {
-            requests.cancel();
+            cancelActiveRequest();
+            scopes.clear();
             refill.clear();
             chat.clear();
-            if (timeout != null) timeout.cancel(false);
-            if (announcement != null) announcement.cancel(false);
-            timeout = null;
-            announcement = null;
         }
     }
 
@@ -119,8 +155,10 @@ public class AutoLoadModule extends Module {
 
     private void onWhisper(WhisperChatEvent event) {
         if (event.outgoing()) return;
-        if (event.sender() != null && event.sender().getProfileId() != null)
-            refill.reply(event.sender().getProfileId(), event.message());
+        synchronized (stateLock) {
+            if (event.sender() != null && event.sender().getProfileId() != null)
+                refill.reply(event.sender().getProfileId(), event.message());
+        }
         processLoadCommand(event.sender(), event.message(), false);
     }
 
@@ -155,6 +193,7 @@ public class AutoLoadModule extends Module {
             }
             long token = requests.begin(System.nanoTime(), COOLDOWN_NANOS);
             if (token == 0) return; // one physical loader operation/announcement at a time
+            activePlayer = sender.getProfileId(); activeBase = pearl.alias();
             Object session = proxy.getClient();
             config.rememberName(sender.getProfileId(), name);
             try {
@@ -165,7 +204,7 @@ public class AutoLoadModule extends Module {
                             discordAndIngameNotification(Embed.builder().title("Pearl completion timed out")
                                 .addField("Player", name).addField("Pearl", pearl.alias()).errorColor());
                         }
-                        cancelPendingRequests();
+                        cancelActiveRequest();
                     }
                 }, 120, TimeUnit.SECONDS);
                 var source = new CommandSource() {
@@ -182,12 +221,12 @@ public class AutoLoadModule extends Module {
                 // Zenith exposes no structured completion result here. Fail closed on unknown titles.
                 boolean accepted = "Loading Pearl".equals(result.title());
                 String response = result.isTitlePresent() ? result.title() : "Pearl load was not accepted";
-                if (!accepted) cancelPendingRequests();
+                if (!accepted) cancelActiveRequest();
                 discordAndIngameNotification(result.isTitlePresent() ? result : Embed.builder().title(response).errorColor());
-                if (!accepted) chat.whisper(name, response);
+                if (!accepted) whisper(sender.getProfileId(), pearl.alias(), name, response);
 
             } catch (Exception e) {
-                cancelPendingRequests();
+                cancelActiveRequest();
                 error("Pearl load request failed", e);
             }
         }
@@ -218,15 +257,17 @@ public class AutoLoadModule extends Module {
             }
             int delay = Math.clamp(PLUGIN_CONFIG.autoLoad.publicChatDelaySeconds, 0, 300);
             String template = PLUGIN_CONFIG.autoLoad.publicPullMessage;
+            var messageValid = scopes.token(player, pearl.alias());
             announcement = scheduler.schedule(() -> {
                 synchronized (stateLock) {
                     try {
-                        if (live(token, session, publicChat)) sendPublicMessage(PullAnnouncement.format(
-                            publicChat, template, name, pearl.alias(), LocalTime.now().format(TIME_FORMAT)));
+                        if (live(token, session, publicChat)) chat.enqueue(null, PullAnnouncement.format(
+                            publicChat, template, name, pearl.alias(), LocalTime.now().format(TIME_FORMAT)), () -> {}, messageValid, 2);
                     } catch (Exception e) {
                         error("Pearl completion announcement failed", e);
                     } finally {
                         requests.release(token);
+                        activePlayer = null; activeBase = null;
                         announcement = null;
                     }
                 }

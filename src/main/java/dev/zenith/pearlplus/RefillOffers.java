@@ -24,6 +24,10 @@ public final class RefillOffers {
         if (offer == null || expired(offer, now) || offer.session() != session) return null;
         return new Reply(offer, answer.equalsIgnoreCase("yes"));
     }
+    public synchronized void cancel(UUID player, String base) {
+        var offer = pending.get(player);
+        if (offer != null && offer.alias().equalsIgnoreCase(base)) pending.remove(player);
+    }
     public synchronized void clear() { pending.clear(); }
     private boolean expired(Offer offer, long now) {
         return now - offer.created() >= TimeUnit.SECONDS.toNanos(60);

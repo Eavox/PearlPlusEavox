@@ -37,8 +37,7 @@ class RefillConfigTest {
         queue.add(session,"Player","refill",()->{},0,()->generation.get()==token);
         queue.add(session,null,"public announcement",()->{},0);
         generation.incrementAndGet();
-        assertFalse(queue.poll(session,0).valid().getAsBoolean());
-        var announcement=queue.poll(session,3_000_000_000L);
+        var announcement=queue.poll(session,0);
         assertTrue(announcement.valid().getAsBoolean()); assertNull(announcement.recipient());
     }
 }

@@ -37,6 +37,40 @@ public class AutoDetectModule extends Module {
             + "; base: " + PLUGIN_CONFIG.autoDetect.baseName + "\n" + scanStatus + "\n" + registrationStatus;
     }
 
+    private final Map<Integer,UUID> observedEntities = new HashMap<>();
+    @Override public com.zenith.network.codec.PacketHandlerCodec registerClientPacketHandlerCodec() {
+        return com.zenith.network.codec.PacketHandlerCodec.clientBuilder().setId("pearlplus-ownership").setPriority(-5)
+            .state(org.geysermc.mcprotocollib.protocol.data.ProtocolState.GAME,
+                com.zenith.network.codec.PacketHandlerStateCodec.clientBuilder()
+                    .inbound(org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.spawn.ClientboundAddEntityPacket.class,
+                        new com.zenith.network.codec.ClientEventLoopPacketHandler<org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.spawn.ClientboundAddEntityPacket, com.zenith.network.client.ClientSession>() {
+                            @Override public boolean applyAsync(org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.spawn.ClientboundAddEntityPacket packet, com.zenith.network.client.ClientSession session) {
+                                if (session == Proxy.getInstance().getClient()) captureSpawn(packet); return true;
+                            }
+                        })
+                    .inbound(org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundRemoveEntitiesPacket.class,
+                        new com.zenith.network.codec.ClientEventLoopPacketHandler<org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundRemoveEntitiesPacket, com.zenith.network.client.ClientSession>() {
+                            @Override public boolean applyAsync(org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundRemoveEntitiesPacket packet, com.zenith.network.client.ClientSession session) {
+                                if (session != Proxy.getInstance().getClient()) return true;
+                                synchronized (AutoDetectModule.this) {
+                                    for (int id:packet.getEntityIds()) { var uuid=observedEntities.remove(id); if(uuid!=null) detector.forget(uuid); }
+                                }
+                                return true;
+                            }
+                        }).build()).build();
+    }
+    private synchronized void captureSpawn(org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.spawn.ClientboundAddEntityPacket packet) {
+        if(packet.getType()!=EntityType.ENDER_PEARL || !(packet.getData() instanceof ProjectileData data)) return;
+        var prior=observedEntities.remove(packet.getEntityId()); if(prior!=null) detector.forget(prior);
+        if(observedEntities.size()>=AutoPearlDetector.MAX_TRACKED) return;
+        observedEntities.put(packet.getEntityId(),packet.getUuid());
+        var owner=CACHE.getEntityCache().get(data.getOwnerId());
+        if(owner instanceof EntityPlayer && owner.getUuid()!=null) {
+            String name=CACHE.getTabListCache().get(owner.getUuid()).map(p->p.getName()).orElse(PLUGIN_CONFIG.autoLoad.displayName(owner.getUuid()));
+            detector.captureOwner(packet.getUuid(),new AutoPearlDetector.Owner(owner.getUuid(),name));
+        }
+    }
+
     @Override public boolean enabledSetting() {
         return PLUGIN_CONFIG.autoLoad.enabled && PLUGIN_CONFIG.autoDetect.enabled;
     }
@@ -50,20 +84,22 @@ public class AutoDetectModule extends Module {
 
     private synchronized void reset() {
         detector.clear();
+        observedEntities.clear();
         ticks = 0;
         scope = null;
         scanStatus = "Waiting for a fresh scan";
     }
 
     public synchronized boolean clearChamber(UUID player, String base, boolean keepAccess) {
-        MODULE.get(AutoLoadModule.class).cancelPendingRequests();
+        MODULE.get(AutoLoadModule.class).cancelPlayer(player, base);
         var visible = new HashSet<UUID>();
         for (var entity : CACHE.getEntityCache().getEntities().values()) {
             if (entity.getEntityType() == EntityType.ENDER_PEARL && entity.getUuid() != null)
                 visible.add(entity.getUuid());
         }
         boolean changed = PLUGIN_CONFIG.clearChamber(player, base, keepAccess, visible);
-        reset();
+        // Keep ownership observations for unrelated pearls, including owners outside render range.
+        scanStatus = "Chamber reset; waiting for a fresh scan";
         saveConfigAsync();
         return changed;
     }
@@ -85,7 +121,7 @@ public class AutoDetectModule extends Module {
         ticks = 0;
         String currentScope = currentScope();
         if (!Objects.equals(scope, currentScope)) {
-            detector.clear();
+            if (scope != null) { detector.clear(); observedEntities.clear(); }
             scope = currentScope;
         }
         var pearls = new ArrayList<AutoPearlDetector.Pearl>();
@@ -102,18 +138,34 @@ public class AutoDetectModule extends Module {
                     entity.getX(), entity.getY(), entity.getZ()));
                 if (pearls.size() > AutoPearlDetector.MAX_TRACKED) {
                     detector.clear();
+                    scanStatus = "Detection paused: more than 256 visible pearls";
                     return;
                 }
             }
         }
-        var candidates = detector.scan(pearls, owners, id -> PLUGIN_CONFIG.autoLoad.canAutoRegister(id, AutoPearlNaming.baseAlias(PLUGIN_CONFIG.autoDetect.baseName)),
-            (x, y, z) -> World.isChunkLoadedBlockPos(x, z) ? World.getBlock(x, y, z).name() : null,
-            System.nanoTime());
-        var eligible = candidates.stream().filter(this::eligible).toList();
         String base = AutoPearlNaming.baseAlias(PLUGIN_CONFIG.autoDetect.baseName);
-        long permitted = owners.values().stream().filter(o -> PLUGIN_CONFIG.autoLoad.canAutoRegister(o.uuid(), base)).count();
+        var permissions = PLUGIN_CONFIG.autoLoad.snapshot();
+        var grants = PLUGIN_CONFIG.autoLoad.accessSnapshot();
+        var saved = PLUGIN_CONFIG.autoDetect.snapshot();
+        var index = index(saved, permissions);
+        var ignored = new HashMap<String, Set<UUID>>();
+        synchronized (PLUGIN_CONFIG.autoDetect) {
+            if (PLUGIN_CONFIG.autoDetect.ignoredPearls != null) PLUGIN_CONFIG.autoDetect.ignoredPearls.forEach((key,ids) -> {
+                if (key.endsWith("/" + base)) ignored.put(key, Set.copyOf(ids));
+            });
+        }
+        var allowed = new HashSet<UUID>();
+        grants.forEach((id,bases) -> { if(bases.stream().anyMatch(b -> b.equalsIgnoreCase(base))) allowed.add(id); });
+        permissions.forEach((id,entries) -> { if(entries.stream().flatMap(raw -> PearlEntry.parse(raw).stream())
+            .anyMatch(entry -> entry.alias().equalsIgnoreCase(base))) allowed.add(id); });
+        var candidates = detector.scan(pearls, owners, allowed::contains,
+            (x, y, z) -> World.isChunkLoadedBlockPos(x, z) ? World.getBlock(x, y, z).name() : null,
+            System.nanoTime(), (owner, pearl) -> !ignored.getOrDefault(owner + "/" + base, Set.of()).contains(pearl));
+        var eligible = candidates.stream().filter(c -> eligible(c, base, permissions, grants, saved, index)).toList();
+        long permitted = owners.values().stream().filter(o -> allowed.contains(o.uuid())).count();
         scanStatus = "Visible pearls: " + pearls.size() + "; visible players with base access: " + permitted
-            + "; settled candidates: " + candidates.size() + "; eligible assignments: " + eligible.size();
+            + "; settled candidates: " + candidates.size() + "; eligible assignments: " + eligible.size()
+            + "; unknown owners: " + detector.unknownOwners();
         var outcomes = new ArrayList<String>();
         var attempted = new HashSet<UUID>();
         for (var candidate : eligible) {
@@ -146,36 +198,40 @@ public class AutoDetectModule extends Module {
     private String registrationBlock(AutoPearlDetector.Candidate candidate) {
         var owner = candidate.owner();
         var pos = candidate.trigger();
-        String target = AutoPearlNaming.target(scope, owner.uuid(), pos);
-        var existing = PLUGIN_CONFIG.autoDetect.get(target);
         if (!enabledSetting()) return "automatic detection is disabled";
         if (!PLUGIN_CONFIG.autoLoad.canAutoRegister(owner.uuid(), AutoPearlNaming.baseAlias(PLUGIN_CONFIG.autoDetect.baseName)))
             return "base permission was removed";
-        if (existing == null && PLUGIN_CONFIG.autoDetect.size() >= AutoPearlDetector.MAX_TRACKED)
-            return "saved chamber limit reached (256)";
-        return binding(candidate).error();
-    }
-
-    private LoaderBinding.Result binding(AutoPearlDetector.Candidate candidate) {
-        var pos = candidate.trigger();
-        return LoaderBinding.resolve(AutoPearlNaming.target(scope, candidate.owner().uuid(), pos),
-            candidate.owner().uuid(), scope, pos,
-            CONFIG.client.extra.pearlLoader.pearls.stream().map(p -> new LoaderBinding.Loader(p.id(),
-                new AutoPearlDetector.Position(p.x(), p.y(), p.z()))).toList(),
-            PLUGIN_CONFIG.autoDetect.snapshot(), PLUGIN_CONFIG.autoLoad.snapshot());
-    }
-
-    private boolean eligible(AutoPearlDetector.Candidate candidate) {
-        var config = PLUGIN_CONFIG;
-        String base = AutoPearlNaming.baseAlias(config.autoDetect.baseName);
-        if (base == null || !config.autoLoad.canAutoRegister(candidate.owner().uuid(), base)
-            || config.autoDetect.ignored(candidate.owner().uuid(), base, candidate.pearlUuid())) return false;
         var resolved = binding(candidate);
-        String target = resolved.error() == null ? resolved.target()
-            : AutoPearlNaming.target(scope, candidate.owner().uuid(), candidate.trigger());
-        return BasePearlPolicy.canAssign(candidate.owner().uuid(), scope, base, target,
-            config.autoLoad.entries(candidate.owner().uuid()), config.autoDetect.snapshot(),
-            config.autoLoad.hasExplicitBaseAccess(candidate.owner().uuid(), base));
+        if (resolved.error() != null) return resolved.error();
+        if (PLUGIN_CONFIG.autoDetect.get(resolved.target()) == null && PLUGIN_CONFIG.autoDetect.size() >= AutoPearlDetector.MAX_TRACKED)
+            return "saved chamber limit reached (256)";
+        return null;
+    }
+
+    private LoaderBinding.Index index(Map<String, AutoPearl> saved, Map<UUID,List<String>> permissions) {
+        return new LoaderBinding.Index(CONFIG.client.extra.pearlLoader.pearls.stream().map(p -> new LoaderBinding.Loader(p.id(),
+            new AutoPearlDetector.Position(p.x(), p.y(), p.z()))).toList(), saved, permissions);
+    }
+    private LoaderBinding.Result binding(AutoPearlDetector.Candidate c) {
+        return index(PLUGIN_CONFIG.autoDetect.snapshot(), PLUGIN_CONFIG.autoLoad.snapshot())
+            .resolve(AutoPearlNaming.target(scope,c.owner().uuid(),c.trigger()),c.owner().uuid(),scope,c.trigger());
+    }
+    private boolean eligible(AutoPearlDetector.Candidate c, String base, Map<UUID,List<String>> permissions,
+                             Map<UUID,List<String>> grants, Map<String,AutoPearl> saved, LoaderBinding.Index index) {
+        var entries = permissions.getOrDefault(c.owner().uuid(),List.of());
+        // Assigned players retain ownership observations, but need no loader lookup/allocation.
+        if(entries.stream().flatMap(raw->PearlEntry.parse(raw).stream()).anyMatch(p->p.alias().equalsIgnoreCase(base))) return false;
+        boolean explicit = grants.getOrDefault(c.owner().uuid(),List.of()).stream().anyMatch(b->b.equalsIgnoreCase(base));
+        if(!explicit) return false;
+        var resolved=index.resolve(AutoPearlNaming.target(scope,c.owner().uuid(),c.trigger()),c.owner().uuid(),scope,c.trigger());
+        String target=resolved.error()==null?resolved.target():AutoPearlNaming.target(scope,c.owner().uuid(),c.trigger());
+        return BasePearlPolicy.canAssign(c.owner().uuid(),scope,base,target,entries,saved,true);
+    }
+    private boolean eligible(AutoPearlDetector.Candidate c) {
+        String base=AutoPearlNaming.baseAlias(PLUGIN_CONFIG.autoDetect.baseName);
+        if(base==null || PLUGIN_CONFIG.autoDetect.ignored(c.owner().uuid(),base,c.pearlUuid())) return false;
+        var permissions=PLUGIN_CONFIG.autoLoad.snapshot(); var saved=PLUGIN_CONFIG.autoDetect.snapshot();
+        return eligible(c,base,permissions,PLUGIN_CONFIG.autoLoad.accessSnapshot(),saved,index(saved,permissions));
     }
 
     private boolean register(AutoPearlDetector.Candidate candidate) {
@@ -196,7 +252,7 @@ public class AutoDetectModule extends Module {
             config.autoDetect.remember(target, new AutoPearl(owner.uuid(), alias, scope, pos.x(), pos.y(), pos.z()));
             info("Automatically registered {} for {}", alias, owner.name());
             try {
-                MODULE.get(AutoLoadModule.class).whisper(owner.name(),
+                MODULE.get(AutoLoadModule.class).whisper(owner.uuid(), alias, owner.name(),
                     "Pearl saved as " + alias + ". Say load " + alias + " in chat or whisper it to me.");
             } catch (Exception e) {
                 warn("Pearl registered, but setup whisper could not be sent: {}", e.getMessage());

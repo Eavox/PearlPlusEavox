@@ -1,4 +1,4 @@
-# PearlPlus 1.1.14
+# PearlPlus 1.1.15
 
 Allow selected players to activate registered ZenithProxy pearl loaders through whispers or public chat, without granting account-owner permissions.
 
@@ -12,12 +12,12 @@ On Linux, run these shell commands **from your ZenithProxy folder**:
 
 ```sh
 mkdir -p plugins
-curl -fL --retry 3 -o plugins/PearlPlus-1.1.14.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.14/PearlPlus-1.1.14.jar
+curl -fL --retry 3 -o plugins/PearlPlus-1.1.15.jar https://github.com/Eavox/PearlPlusEavox/releases/download/1.1.15/PearlPlus-1.1.15.jar
 ```
 
 Use Zenith's **Java release channel**. Run `plugins on` in the **Zenith console**, then restart Zenith and run `plugins list` to confirm PearlPlus loaded. Remove older PearlPlus JARs before restarting, but keep the config.
 
-Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.14.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
+Build with `./gradlew build` (Windows: `gradlew.bat build`). Place `build/libs/PearlPlus-1.1.15.jar` in the proxy's plugins directory, replacing the old PearlPlus JAR, and restart Zenith. Do not keep both plugin versions installed.
 
 Configuration remains in `plugins/config/pearl-plus.json`. Existing `allowed` UUID lists and `alias=target` entries are preserved. The new `playerNames` map caches display names; older entries show UUIDs until a name is learned from an authorized request or an allow command. Listing never requires a network lookup.
 
@@ -67,7 +67,7 @@ Public commands always allow trailing anti-spam text. The old `publicChatEnabled
 
 ## Spare pearl after a pull
 
-If the bot has ender pearls when Zenith reports a successful pull, it privately asks that player whether they need one to reset their pearl. Reply `/w <botName> yes` within 60 seconds to drop **one pearl** on the ground at the bot, or `/w <botName> no` to decline. After a drop, the bot whispers `I dropped 1 pearl on the ground for you. stay safe !`; declining replies `stay safe !`. Public yes/no messages are ignored. Stand near the bot to collect the dropped pearl; it is not placed directly in your inventory.
+If the bot has ender pearls when Zenith reports a successful pull, it privately asks that player whether they need one to reset their pearl. Reply `/w <botName> yes` within 60 seconds to drop **one pearl** on the ground at the bot, or `/w <botName> no` to decline. After a drop request, the bot reports whether a matching server inventory decrease was observed, or asks the player to check the ground when confirmation is unavailable; both finish with `stay safe !`. Declining replies `stay safe !`. It never retries an uncertain drop automatically. Public yes/no messages are ignored. Stand near the bot to collect the dropped pearl; it is not placed directly in your inventory.
 
 Offers are single-use and tied to the requesting player. Disable, disconnect or permission revocation cancels them. If inventory is busy, a container is open, someone is controlling the bot, or no pearl remains, it sends a private failure message instead of claiming a drop. Drops use Zenith's inventory manager and recheck the item at execution.
 
@@ -130,15 +130,15 @@ Run `pp status` to see the configured base, enable flags, visible pearls, visibl
 
 Version 1.1.10 added per-player registration blockers to `pp status`: ambiguous chambers, existing loader conflicts, missing saved loaders, capacity limits, busy loading, and registration exceptions. Candidate counts mean the scan passed, not that assignments were saved. Existing loader conflicts remain protected from automatic overwrites.
 
-Version 1.1.14 pins the first assignment and recovers unclaimed automatic loaders at the detected spot. Existing assigned spots take priority over later pearls. No pearl-refill or chat commands changed.
+Version 1.1.11 pins the first assignment and recovers unclaimed automatic loaders at the detected spot. Existing assigned spots take priority over later pearls. No pearl-refill or chat commands changed.
 
-### Outgoing messages (1.1.14)
+### Outgoing messages
 
 All PearlPlus setup, refill and pull messages share a queue with at least three seconds between submissions. Redundant loading/completion replies were removed. The refill reply window starts when the prompt is submitted. `pp delay` still controls the minimum wait before the public announcement; other queued messages can delay it further. Public-request templates must include `{player}` or fall back to the named default. Whisper pulls announce exactly `Member of Divinity have been pulled`.
 
 `pp status` and console `[Pearl+ chat]` lines show the last message submitted, or a local send failure. Submission is not confirmation that the Minecraft server delivered it: server mute, chat restrictions and spam filters still apply. No automatic retries or random message suffixes are added.
 
-## Refill and donation controls (1.1.14)
+## Refill and donation controls
 
 Owner commands: `pp refill on`, `pp refill off`, `pp refill reset`, and `pp stock`.
 The refill switch is saved independently on each bot/base and defaults to on. Off cancels offers, queued refill whispers, and unexecuted drops; pearl loading and public announcements continue.
@@ -148,3 +148,16 @@ At zero pearls, a successful pull requests a donation privately instead of offer
 ## Clearing a chamber (1.1.14)
 
 `pp reset PlayerName crew` clears the player's saved location and keeps existing access. `pp deny PlayerName crew` now clears both the saved location and access. After `pp allow PlayerName crew`, throw a fresh pearl while the bot is nearby. Both commands accept UUIDs. Other bases and players stay unchanged. Existing physical pearls and Zenith loader definitions are not deleted. Pearls visible at reset/deny are excluded from re-registration for that player/base, persisted across restarts, so an old pearl cannot immediately undo the reset. A fresh identifiable pearl is required. `pp refill reset` remains a separate donation-history reset.
+
+## Audit fixes (1.1.15)
+
+- Reset/deny now cancels only that player/base's request, queued messages and refill state. Unrelated ownership observations and conversations survive. Already-started upstream loader actions cannot be undone by cancelling callbacks.
+- Safe shared-chamber grouping considers all owners before choosing a non-ignored pearl. A fresh pearl no longer gets hidden behind an ignored old pearl belonging to the same player.
+- Packet handlers capture ownership evidence at pearl spawn and clear observations on entity removal/disconnect. Names can refresh only when UUID identity matches. Unknown ownership is never inferred from distance or a reused entity ID; old pearls with no reliable owner still need a fresh throw. `pp status` reports unknown owner count.
+- Loader recovery requires the saved coordinates for known automatic loaders. Orphan automatic loaders remain recoverable when otherwise safe.
+- Each scan builds permission and loader indexes once, skips expensive binding checks for assigned players, and revalidates a candidate before committing. No CPU saving percentage is claimed without live profiling.
+- Chat uses a bounded 32-message priority queue (confirmations before optional donations), prunes invalid entries before the cooldown, and exposes discard/rejection counts. A full accepted queue can drain within its 120-second expiry without new traffic. Same-session cancellation does not reset the three-second cooldown.
+- Transport write failures are reported; offers/donation history advance only on successful local writes. Writes do not prove server delivery. Inventory receipts use server-originated slot/content updates, not optimistic local cache edits; matching decreases do not prove recipient pickup. No automatic uncertain-drop retries.
+- **The 256-pearl cutoff is unchanged.** Detection still stops above it, now with explicit status. The saved-chamber limit is also unchanged.
+
+Validation includes mixed old/new pearls, reset isolation, stale messages, queue overload/priorities, loader movement, ownership continuity, inventory receipt matching and the unchanged cutoff. Live 2b2t verification remains necessary.

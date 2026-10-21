@@ -19,7 +19,7 @@ public final class AutoPearlDetector {
 
     private static final class Observation {
         // Bind only on first sight. Never guess ownership from proximity or a reused entity ID.
-        final Owner owner;
+        Owner owner;
         final long order;
         Position trigger;
         long since;
@@ -27,10 +27,24 @@ public final class AutoPearlDetector {
         Observation(Owner owner, long order) { this.owner = owner; this.order = order; }
     }
 
+    /** Called only with owner UUID evidence captured from this pearl's spawn packet. */
+    public void captureOwner(UUID pearl, Owner owner) {
+        if (pearl == null || owner == null || owner.uuid() == null) return;
+        if (!observations.containsKey(pearl) && observations.size() >= MAX_TRACKED) return;
+        var observation = observations.computeIfAbsent(pearl, id -> new Observation(owner, sequence++));
+        if (observation.owner == null) observation.owner = owner;
+    }
+    public long unknownOwners() { return observations.values().stream().filter(o -> o.owner == null).count(); }
+    public void forget(UUID pearl) { observations.remove(pearl); }
     public void clear() { observations.clear(); }
 
     public List<Candidate> scan(List<Pearl> pearls, Map<Integer, Owner> owners,
                                 Predicate<UUID> whitelisted, Blocks blocks, long now) {
+        return scan(pearls, owners, whitelisted, blocks, now, (owner, pearl) -> true);
+    }
+
+    public List<Candidate> scan(List<Pearl> pearls, Map<Integer, Owner> owners,
+                                Predicate<UUID> whitelisted, Blocks blocks, long now, java.util.function.BiPredicate<UUID,UUID> selectable) {
         if (pearls.size() > MAX_TRACKED) {
             clear();
             return List.of();
@@ -42,6 +56,10 @@ public final class AutoPearlDetector {
             visible.add(pearl.uuid());
             Observation observation = observations.computeIfAbsent(pearl.uuid(),
                 ignored -> new Observation(pearl.ownerEntityId() > 0 ? owners.get(pearl.ownerEntityId()) : null, sequence++));
+            // A later tab-list name may replace a UUID fallback only for the same proven identity.
+            var visibleOwner = owners.get(pearl.ownerEntityId());
+            if (observation.owner != null && visibleOwner != null
+                && observation.owner.uuid().equals(visibleOwner.uuid())) observation.owner = visibleOwner;
             Position trigger = findTrigger(pearl, blocks).orElse(null);
             if (trigger == null) {
                 observation.trigger = null;
@@ -70,9 +88,10 @@ public final class AutoPearlDetector {
                 else distinctOwners.add(owner.uuid());
             }
             if (unknownOwner || distinctOwners.size() != 1) continue;
-            for (Pearl pearl : entry.getValue()) {
+            for (Pearl pearl : entry.getValue().stream()
+                .sorted(Comparator.comparingLong(p -> observations.get(p.uuid()).order)).toList()) {
                 Observation observation = observations.get(pearl.uuid());
-                if (whitelisted.test(observation.owner.uuid()) && now - observation.since >= SETTLE_TIME) {
+                if (selectable.test(observation.owner.uuid(), pearl.uuid()) && whitelisted.test(observation.owner.uuid()) && now - observation.since >= SETTLE_TIME) {
                     ready.add(new Candidate(pearl.uuid(), observation.owner, entry.getKey()));
                     break;
                 }
