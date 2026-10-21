@@ -32,7 +32,7 @@ public class AutoLoadCommand extends Command {
         return CommandUsage.builder().name("pearl+").category(CommandCategory.MODULE)
             .description("Allow players to load assigned pearls through whispers or public chat.")
             .usageLines("<on/off>", "allow <playerName> <keyword> [pearlId]",
-                "deny <playerName/UUID> <keyword>", "list [page]", "strict <on/off>",
+                "deny <playerName/UUID> <keyword>", "reset <playerName/UUID> <keyword>", "list [page]", "strict <on/off>",
                 "stock", "refill <on/off/reset>", "status", "base [name]", "autodetect <on/off>", "delay <0-300 seconds>", "message <text>")
             .aliases("pp").build();
     }
@@ -75,27 +75,9 @@ public class AutoLoadCommand extends Command {
                     .then(argument("pearlId", wordWithChars())
                         .executes(c -> { return allowPlayer(c, getString(c, "pearlName"), getString(c, "pearlId")); })))))
             .then(literal("deny").then(argument("playerName", wordWithChars())
-                .then(argument("pearlName", wordWithChars()).executes(c -> {
-                    String player = getString(c, "playerName");
-                    UUID uuid;
-                    try {
-                        uuid = UUID.fromString(player);
-                    } catch (IllegalArgumentException e) {
-                        var profile = PlayerListsManager.getProfileFromUsername(player);
-                        if (profile.isEmpty()) {
-                            c.getSource().getEmbed().title("Profile lookup failed")
-                                .description("Retry, or use the player's UUID from pp list to revoke access offline.");
-                            return ERROR;
-                        }
-                        uuid = profile.get().uuid();
-                    }
-                    String alias = getString(c, "pearlName");
-                    boolean removed = PLUGIN_CONFIG.autoLoad.deny(uuid, alias);
-                    if (removed) MODULE.get(AutoLoadModule.class).cancelPendingRequests();
-                    c.getSource().getEmbed().title(removed ? "Removed pearl " + alias + " from " + player
-                        : "No matching permission for " + player + ": " + alias);
-                    return removed ? OK : ERROR;
-                }))))
+                .then(argument("pearlName", wordWithChars()).executes(c -> { return clearChamber(c, false); }))))
+            .then(literal("reset").then(argument("playerName", wordWithChars())
+                .then(argument("pearlName", wordWithChars()).executes(c -> { return clearChamber(c, true); }))))
             .then(literal("list").executes(c -> { return list(c.getSource(), 1); })
                 .then(argument("page", integer(1)).executes(c -> { return list(c.getSource(), getInteger(c, "page")); })))
             .then(literal("strict").then(argument("toggle", toggle()).executes(c -> {
@@ -146,6 +128,28 @@ public class AutoLoadCommand extends Command {
                     .description(text + "\nPlaceholders: {player}, {pearl}, {time}");
                 return OK;
             })));
+    }
+
+    private int clearChamber(com.mojang.brigadier.context.CommandContext<CommandContext> ctx, boolean keepAccess) {
+        String player = getString(ctx, "playerName");
+        UUID uuid;
+        try { uuid = UUID.fromString(player); }
+        catch (IllegalArgumentException e) {
+            var profile = PlayerListsManager.getProfileFromUsername(player);
+            if (profile.isEmpty()) {
+                ctx.getSource().getEmbed().title("Profile lookup failed")
+                    .description("Retry or use the player's UUID from pp list.");
+                return ERROR;
+            }
+            uuid = profile.get().uuid();
+        }
+        String base = AutoPearlNaming.baseAlias(getString(ctx, "pearlName"));
+        if (base == null) { ctx.getSource().getEmbed().title("Invalid base name"); return ERROR; }
+        MODULE.get(AutoDetectModule.class).clearChamber(uuid, base, keepAccess);
+        ctx.getSource().getEmbed().title(keepAccess ? "Chamber location cleared for " + player : "Access and chamber cleared for " + player)
+            .description(keepAccess ? "Existing base access retained. Throw a fresh pearl while the bot is nearby."
+                : "Grant access again with pp allow " + player + " " + base + ", then throw a fresh pearl nearby.");
+        return OK;
     }
 
     private int allowPlayer(com.mojang.brigadier.context.CommandContext<CommandContext> ctx, String alias, String target) {

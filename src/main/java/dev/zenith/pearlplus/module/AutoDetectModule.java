@@ -55,6 +55,19 @@ public class AutoDetectModule extends Module {
         scanStatus = "Waiting for a fresh scan";
     }
 
+    public synchronized boolean clearChamber(UUID player, String base, boolean keepAccess) {
+        MODULE.get(AutoLoadModule.class).cancelPendingRequests();
+        var visible = new HashSet<UUID>();
+        for (var entity : CACHE.getEntityCache().getEntities().values()) {
+            if (entity.getEntityType() == EntityType.ENDER_PEARL && entity.getUuid() != null)
+                visible.add(entity.getUuid());
+        }
+        boolean changed = PLUGIN_CONFIG.clearChamber(player, base, keepAccess, visible);
+        reset();
+        saveConfigAsync();
+        return changed;
+    }
+
     public synchronized void setBase(String base) {
         PLUGIN_CONFIG.autoDetect.baseName = base;
         reset();
@@ -155,7 +168,8 @@ public class AutoDetectModule extends Module {
     private boolean eligible(AutoPearlDetector.Candidate candidate) {
         var config = PLUGIN_CONFIG;
         String base = AutoPearlNaming.baseAlias(config.autoDetect.baseName);
-        if (base == null || !config.autoLoad.canAutoRegister(candidate.owner().uuid(), base)) return false;
+        if (base == null || !config.autoLoad.canAutoRegister(candidate.owner().uuid(), base)
+            || config.autoDetect.ignored(candidate.owner().uuid(), base, candidate.pearlUuid())) return false;
         var resolved = binding(candidate);
         String target = resolved.error() == null ? resolved.target()
             : AutoPearlNaming.target(scope, candidate.owner().uuid(), candidate.trigger());

@@ -22,6 +22,23 @@ public class PearlPlusConfig {
         public static boolean shouldAsk(int stock, boolean declined) { return stock == 0 || (declined && stock > 0 && stock < 5); }
     }
 
+    /** Clear the base binding, retaining other players and other bases. */
+    public boolean clearChamber(UUID player, String base, boolean keepAccess, java.util.Set<UUID> visiblePearls) {
+        synchronized (autoLoad) {
+            boolean hadAccess = autoLoad.canAutoRegister(player, base);
+            String name = autoLoad.displayName(player);
+            boolean changed = autoLoad.deny(player, base);
+            synchronized (autoDetect) {
+                if (autoDetect.registered != null) changed |= autoDetect.registered.entrySet().removeIf(e ->
+                    player.equals(e.getValue().owner()) && base.equalsIgnoreCase(e.getValue().alias()));
+                if (autoDetect.ignoredPearls == null) autoDetect.ignoredPearls = new LinkedHashMap<>();
+                autoDetect.ignoredPearls.put(player + "/" + base.toLowerCase(java.util.Locale.ROOT), new java.util.HashSet<>(visiblePearls));
+            }
+            if (keepAccess && hadAccess) autoLoad.allowBase(player, name, base);
+            return changed;
+        }
+    }
+
     public final AutoLoadConfig autoLoad = new AutoLoadConfig();
     public static class AutoLoadConfig {
         public volatile boolean enabled = true;
@@ -122,6 +139,12 @@ public class PearlPlusConfig {
     public static final class AutoDetectConfig {
         public volatile boolean enabled = true;
         public volatile String baseName = "";
+        public Map<String, java.util.Set<UUID>> ignoredPearls = new LinkedHashMap<>();
+        public synchronized boolean ignored(UUID player, String base, UUID pearl) {
+            if (ignoredPearls == null || base == null) return false;
+            var ids = ignoredPearls.get(player + "/" + base.toLowerCase(java.util.Locale.ROOT));
+            return ids != null && ids.contains(pearl);
+        }
         // Remember registered chambers so restart/rethrow cannot undo an owner's pp deny.
         public Map<String, AutoPearl> registered = new ConcurrentHashMap<>();
 
